@@ -21,6 +21,7 @@ import { createJobsRouter } from "../../modules/jobs/index.js"
 import { createSchedulesRouter } from "../../modules/schedules/index.js"
 import { createExecutionsRouter } from "../../modules/executions/index.js"
 import { createWorkersRouter } from "../../modules/workers/index.js"
+import { buildOpenApiDocument } from "./openapi.js"
 
 export function createHttpServer(
 	database: PrismaClient,
@@ -48,6 +49,9 @@ export function createHttpServer(
 		} catch (exception: unknown) {
 			next(exception)
 		}
+	})
+	app.get("/api/v1/openapi.json", (_request, response) => {
+		response.json(buildOpenApiDocument())
 	})
 
 	// API v1 routes
