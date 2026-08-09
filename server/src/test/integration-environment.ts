@@ -74,6 +74,8 @@ export function createTestConfig(
     SCHEDULER_BATCH_SIZE: 50,
     WORKER_CONCURRENCY: 2,
     LEASE_DURATION_MS: 60_000,
+    RETENTION_PRUNE_INTERVAL_MS: 86_400_000,
+    RETENTION_PRUNE_BATCH_SIZE: 1_000,
     WORKER_ROLE: "executor",
     ...overrides,
   };

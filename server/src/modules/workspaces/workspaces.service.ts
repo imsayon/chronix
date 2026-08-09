@@ -45,7 +45,7 @@ export async function updateWorkspace(
   db: PrismaClient,
   ctx: RequestContext,
   workspaceId: string,
-  input: Partial<{ name: string; slug: string }>,
+	input: Partial<{ name: string; slug: string; retentionDays: number }>,
 ): Promise<Workspace> {
   const auth = requireAuth(ctx);
   if (auth.workspaceId !== workspaceId) throw new NotFoundError("Workspace not found.");

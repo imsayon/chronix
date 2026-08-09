@@ -479,3 +479,15 @@ describe("encrypted job material", () => {
     expect(rotated.body.data.signingSecret).toBeDefined();
   });
 });
+
+describe("execution export", () => {
+  it("streams a bounded workspace-scoped CSV", async () => {
+    const registration = await registerUser(uniqueEmail());
+    const token = registration.body.data.accessToken as string;
+    const workspaceId = (await app.get("/api/v1/workspaces").set("Authorization", `Bearer ${token}`)).body.data.workspaces[0].id as string;
+    const response = await app.get(`/api/v1/workspaces/${workspaceId}/executions/export?limit=10`).set("Authorization", `Bearer ${token}`);
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/csv");
+    expect(response.text).toContain("id,job_id,schedule_id,status");
+  });
+});

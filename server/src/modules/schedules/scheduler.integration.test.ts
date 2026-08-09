@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { createTestConfig, startTestDatabase } from "../../test/integration-environment.js";
 import { processDueSchedules } from "./scheduler.service.js";
+import { pruneExpiredExecutions } from "../executions/retention.service.js";
 
 let database: PrismaClient;
 let stopDatabase: () => Promise<void>;
@@ -171,5 +172,18 @@ describe("scheduler integration", () => {
 
     expect(await database.execution.count({ where: { scheduleId: schedule.id } })).toBe(0);
     expect(await database.executionOutbox.count()).toBe(0);
+  });
+
+  it("prunes terminal executions according to the workspace retention policy", async () => {
+    const { workspace, job } = await insertWorkspaceAndJob("retention");
+    await database.workspace.update({ where: { id: workspace.id }, data: { retentionDays: 1 } });
+    const schedule = await database.schedule.create({
+      data: { workspaceId: workspace.id, jobId: job.id, name: "Retention schedule", scheduleType: "one_time", runAt: new Date(), nextRunAt: new Date() },
+    });
+    const execution = await database.execution.create({
+      data: { workspaceId: workspace.id, scheduleId: schedule.id, jobId: job.id, nominalRunAt: new Date("2026-01-01"), idempotencyKey: `retention-${randomUUID()}`, maxRetries: 0, retryBackoffBaseMs: 1_000, status: "succeeded", terminalAt: new Date("2026-01-01") },
+    });
+    expect(await pruneExpiredExecutions(database, new Date("2026-01-03"), 100)).toBe(1);
+    await expect(database.execution.findUnique({ where: { id: execution.id } })).resolves.toBeNull();
   });
 });

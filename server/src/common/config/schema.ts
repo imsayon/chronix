@@ -19,6 +19,8 @@ export const configSchema = z
     SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
     LEASE_DURATION_MS: z.coerce.number().int().min(10000).default(60000),
+    RETENTION_PRUNE_INTERVAL_MS: z.coerce.number().int().min(60000).default(86400000),
+    RETENTION_PRUNE_BATCH_SIZE: z.coerce.number().int().min(100).max(10000).default(1000),
     WORKER_ROLE: z.enum(["scheduler", "executor"]).default("executor"),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   })

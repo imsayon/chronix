@@ -43,3 +43,14 @@ export async function getExecution(
 	const attempts = await repo.findAttemptsByExecution(db, executionId, workspaceId)
 	return { ...execution, attempts }
 }
+
+export async function exportExecutions(
+	db: PrismaClient,
+	ctx: RequestContext,
+	workspaceId: string,
+	limit: number,
+) {
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'executions:read')
+	return repo.findExecutionsByWorkspace(db, workspaceId, { limit: Math.min(limit, 10_000) })
+}
