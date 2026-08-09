@@ -44,7 +44,7 @@ export function startExecutor(config: Config, db: PrismaClient): Stoppable {
 			// Find the execution first to get the workspaceId (it's required by processExecution)
 			const execution = await db.execution.findUnique({ where: { id: executionId }, select: { workspaceId: true } })
 			if (execution) {
-				await processExecution(db, workerId, executionId, execution.workspaceId)
+				await processExecution(db, workerId, executionId, execution.workspaceId, undefined, config.LEASE_DURATION_MS)
 			}
 		} catch (error) {
 			logger.error({ err: error, executionId }, "Unhandled error in processExecution")

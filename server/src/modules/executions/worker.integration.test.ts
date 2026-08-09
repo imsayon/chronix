@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import { startTestDatabase } from "../../test/integration-environment.js";
 import * as jobsRepository from "../jobs/jobs.repository.js";
 import * as schedulesRepository from "../schedules/schedules.repository.js";
 import { processExecution } from "./worker.service.js";
+import { claimExecution, recoverStaleLease, recordOutcome } from "./executions.repository.js";
 
 let database: PrismaClient;
 let stopDatabase: () => Promise<void>;
@@ -141,5 +142,30 @@ describe("worker service integration", () => {
     expect(updated.nextRetryAt).toBeNull();
     expect(updated.terminalAt).not.toBeNull();
     expect(attempts[0]?.attemptNumber).toBe(2);
+  });
+
+  it("rejects stale fencing generations and recovers expired leases", async () => {
+    const execution = await createExecution({ suffix: "fence", maxRetries: 1 });
+    const claimed = await claimExecution(database, execution.id, "worker-a", 60_000);
+    expect(claimed).not.toBeNull();
+    expect(await recordOutcome(database, execution.id, claimed!.leaseGeneration - 1, "succeeded")).toBe(false);
+
+    await database.execution.update({ where: { id: execution.id }, data: { leaseExpiresAt: new Date(Date.now() - 1_000) } });
+    expect(await recoverStaleLease(database, execution.id)).toBe(true);
+    const recovered = await database.execution.findUniqueOrThrow({ where: { id: execution.id } });
+    expect(recovered.status).toBe("pending");
+    expect(recovered.leaseGeneration).toBe(claimed!.leaseGeneration + 1);
+    expect(await claimExecution(database, execution.id, "worker-b", 60_000)).not.toBeNull();
+  });
+
+  it("tolerates duplicate queue deliveries with one fenced HTTP attempt", async () => {
+    const execution = await createExecution({ suffix: "duplicate", maxRetries: 1 });
+    const deliver = vi.fn().mockResolvedValue({ outcome: "success", statusCode: 204, durationMs: 2, responseBodySample: null, errorMessage: null });
+    await Promise.all([
+      processExecution(database, workerId, execution.id, workspaceId, deliver),
+      processExecution(database, "other-worker", execution.id, workspaceId, deliver),
+    ]);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(await database.executionAttempt.count({ where: { executionId: execution.id } })).toBe(1);
   });
 });

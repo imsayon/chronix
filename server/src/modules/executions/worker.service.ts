@@ -2,17 +2,28 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import * as repo from './executions.repository.js'
 import * as jobsRepo from '../jobs/jobs.repository.js'
 import { executeWebhook } from '../../infra/http-client/client.js'
+import type { DeliveryClient } from '../../infra/http-client/client.js'
 import { logger } from '../../infra/telemetry.js'
+
+const defaultDeliver: DeliveryClient['deliver'] = (input) => executeWebhook(
+	input.url,
+	input.method,
+	input.headers,
+	input.body,
+	input.timeoutMs,
+	input.chronixHeaders,
+)
 
 export async function processExecution(
 	db: PrismaClient,
 	workerId: string,
 	executionId: string,
 	workspaceId: string,
-	deliver: typeof executeWebhook = executeWebhook,
+	deliver: DeliveryClient['deliver'] = defaultDeliver,
+	leaseMs = 60_000,
 ): Promise<void> {
-	// 1. Claim the execution (leases it to this worker for 60 seconds)
-	const execution = await repo.claimExecution(db, executionId, workerId, 60_000)
+	// 1. Claim the execution with a fenced lease owned by this worker.
+	const execution = await repo.claimExecution(db, executionId, workerId, leaseMs)
 
 	if (!execution) {
 		logger.info({ executionId, workerId }, 'Execution is no longer pending or could not be claimed')
@@ -38,20 +49,20 @@ export async function processExecution(
 
 		// 3. Perform the actual HTTP webhook call
 		const attemptStartedAt = new Date()
-		const response = await deliver(
-			job.targetUrl,
-			job.httpMethod,
-			job.headers,
-			job.bodyTemplate,
-			job.timeoutMs,
-			{
+		const response = await deliver({
+			url: job.targetUrl,
+			method: job.httpMethod,
+			headers: job.headers,
+			body: job.bodyTemplate,
+			timeoutMs: job.timeoutMs,
+			chronixHeaders: {
 				executionId: execution.id,
 				attemptNumber: execution.attemptCount + 1,
 				scheduleId: execution.scheduleId,
 				jobId: execution.jobId,
 				workspaceId: execution.workspaceId,
-			}
-		)
+			},
+		})
 		const attemptFinishedAt = new Date()
 
 		// 4. Record the attempt in the database
@@ -88,9 +99,10 @@ export async function processExecution(
 		const maxRetries = execution.maxRetries
 		const attemptCount = execution.attemptCount + 1
 
-		if (attemptCount <= maxRetries && response.outcome !== 'ssrf_blocked') {
+		const retryable = response.outcome === 'server_error' || response.outcome === 'timeout' || response.outcome === 'network_error' || response.statusCode === 429
+		if (attemptCount <= maxRetries && retryable) {
 			// Schedule a retry using exponential backoff
-			const backoffMs = execution.retryBackoffBaseMs * Math.pow(2, attemptCount - 1)
+			const backoffMs = Math.min(execution.retryBackoffBaseMs * Math.pow(2, attemptCount - 1), 24 * 60 * 60 * 1000)
 			const nextRetryAt = new Date(Date.now() + backoffMs)
 
 			await repo.scheduleRetry(db, executionId, execution.leaseGeneration, nextRetryAt)
