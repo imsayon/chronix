@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Server ────────────────────────────────────────────────────────────────
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.9.0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '25.9.0'
+          cache: 'pnpm'
+          cache-dependency-path: server/pnpm-lock.yaml
+
+      # (1) Reproducible install
+      - name: Install dependencies
+        working-directory: server
+        run: pnpm install --frozen-lockfile
+
+      # (2) Type check
+      - name: Type check
+        working-directory: server
+        run: pnpm prisma:generate && pnpm typecheck
+
+      # (3) Lint
+      - name: Lint
+        working-directory: server
+        run: pnpm lint
+
+      # (4) Unit tests — fast, no Docker
+      - name: Unit tests
+        working-directory: server
+        run: pnpm test:unit
+
+      # (5) Integration tests — real PostgreSQL + Redis via Testcontainers
+      - name: Integration tests
+        working-directory: server
+        run: pnpm test:integration
+
+      # (6) Production build
+      - name: Build
+        working-directory: server
+        run: pnpm build
+
+      # (7) Vulnerability audit
+      - name: Security audit
+        working-directory: server
+        run: pnpm audit --audit-level=high
+
+  # ─── Client ────────────────────────────────────────────────────────────────
+  client:
+    name: Client
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.9.0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '25.9.0'
+          cache: 'pnpm'
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      # (1) Reproducible install
+      - name: Install dependencies
+        working-directory: client
+        run: pnpm install --frozen-lockfile
+
+      # (2) Type check
+      - name: Type check
+        working-directory: client
+        run: pnpm typecheck
+
+      # (3) Lint
+      - name: Lint
+        working-directory: client
+        run: pnpm lint
+
+      # (4) Production build
+      - name: Build
+        working-directory: client
+        run: pnpm build
+
+      # (5) Vulnerability audit
+      - name: Security audit
+        working-directory: client
+        run: pnpm audit --audit-level=high

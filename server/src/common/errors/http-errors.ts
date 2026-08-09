@@ -1,0 +1,11 @@
+import { AppError } from "./AppError.js";
+
+export class BadRequestError extends AppError { public constructor(message = "The request is invalid.", details?: readonly unknown[]) { super("BAD_REQUEST", message, 400, details); } }
+export class UnauthorizedError extends AppError { public constructor(message = "Authentication is required.") { super("UNAUTHORIZED", message, 401); } }
+export class ForbiddenError extends AppError { public constructor(message = "You are not permitted to perform this action.") { super("FORBIDDEN", message, 403); } }
+export class NotFoundError extends AppError { public constructor(message = "The requested resource was not found.") { super("NOT_FOUND", message, 404); } }
+export class ConflictError extends AppError { public constructor(message = "The request conflicts with existing state.") { super("CONFLICT", message, 409); } }
+export class UnprocessableError extends AppError { public constructor(message = "The request cannot be processed.") { super("UNPROCESSABLE", message, 422); } }
+export class TooManyRequestsError extends AppError { public constructor(message = "Too many requests. Please slow down.") { super("TOO_MANY_REQUESTS", message, 429); } }
+export class InternalError extends AppError { public constructor() { super("INTERNAL_ERROR", "An unexpected error occurred.", 500); } }
+export class ValidationError extends BadRequestError { public constructor(details: readonly unknown[]) { super("Request validation failed.", details); this.name = new.target.name; } }

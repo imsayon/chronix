@@ -1,0 +1,360 @@
+generator client {
+    provider        = "prisma-client"
+    output          = "../src/generated/prisma"
+    moduleFormat    = "esm"
+    previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+// ─── Enumerations ─────────────────────────────────────────────────────────────
+
+enum WorkspaceRole {
+    owner
+    admin
+    member
+    viewer
+}
+
+enum ApiKeyScope {
+    schedules_read     @map("schedules:read")
+    schedules_write    @map("schedules:write")
+    executions_read    @map("executions:read")
+    executions_trigger @map("executions:trigger")
+    admin
+}
+
+enum HttpMethod {
+    GET
+    POST
+    PUT
+    PATCH
+    DELETE
+}
+
+enum ScheduleType {
+    cron
+    one_time
+}
+
+enum ScheduleStatus {
+    active
+    paused
+    completed
+    error
+}
+
+enum MisfirePolicy {
+    coalesce
+    skip
+    catch_up
+}
+
+enum ExecutionStatus {
+    pending
+    claimed
+    running
+    succeeded
+    failed
+    dead_lettered
+}
+
+enum TriggerType {
+    scheduled
+    manual
+}
+
+enum AttemptOutcome {
+    success
+    client_error
+    server_error
+    timeout
+    network_error
+    ssrf_blocked
+    unknown
+}
+
+enum AuditActorType {
+    account
+    api_key
+    system
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+/// Human user identity. Programmatic access uses ApiKey, not Account.
+model Account {
+    id           String   @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    email        String   @unique
+    passwordHash String   @map("password_hash")
+    displayName  String   @map("display_name")
+    isActive     Boolean  @default(true) @map("is_active")
+    createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+    refreshTokens        RefreshToken[]
+    workspaceMemberships WorkspaceMembership[]
+    auditEvents          AuditEvent[]
+
+    @@map("accounts")
+}
+
+/// Refresh-token families for session management and reuse detection.
+model RefreshToken {
+    id        String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    accountId String    @map("account_id") @db.Uuid
+    tokenHash String    @unique @map("token_hash")
+    familyId  String    @map("family_id") @db.Uuid
+    revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+    expiresAt DateTime  @map("expires_at") @db.Timestamptz
+    createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+    account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+    @@index([accountId])
+    @@index([familyId])
+    @@map("refresh_tokens")
+}
+
+/// Organisational isolation boundary. Every schedule and execution belongs to a workspace.
+model Workspace {
+    id        String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    name      String
+    slug      String    @unique
+    deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+    createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+    memberships       WorkspaceMembership[]
+    apiKeys           ApiKey[]
+    jobs              Job[]
+    schedules         Schedule[]
+    executions        Execution[]
+    executionAttempts ExecutionAttempt[]
+    auditEvents       AuditEvent[]
+
+    @@map("workspaces")
+}
+
+/// Links accounts to workspaces with a role.
+model WorkspaceMembership {
+    id          String        @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId String        @map("workspace_id") @db.Uuid
+    accountId   String        @map("account_id") @db.Uuid
+    role        WorkspaceRole @default(member)
+    createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+    @@unique([workspaceId, accountId])
+    @@index([accountId])
+    @@map("workspace_memberships")
+}
+
+/// Scoped machine credentials for programmatic API access.
+model ApiKey {
+    id          String        @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId String        @map("workspace_id") @db.Uuid
+    name        String
+    keyHash     String        @unique @map("key_hash")
+    keyPrefix   String        @map("key_prefix")
+    scopes      ApiKeyScope[]
+    lastUsedAt  DateTime?     @map("last_used_at") @db.Timestamptz
+    expiresAt   DateTime?     @map("expires_at") @db.Timestamptz
+    revokedAt   DateTime?     @map("revoked_at") @db.Timestamptz
+    createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@index([workspaceId])
+    @@map("api_keys")
+}
+
+/// Named outbound HTTP webhook target and its static delivery configuration.
+model Job {
+    id           String     @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId  String     @map("workspace_id") @db.Uuid
+    name         String
+    description  String?
+    targetUrl    String     @map("target_url")
+    httpMethod   HttpMethod @default(POST) @map("http_method")
+    headers      Json       @default("{}") @db.JsonB
+    bodyTemplate String?    @map("body_template")
+    timeoutMs    Int        @default(30000) @map("timeout_ms")
+    isEnabled    Boolean    @default(true) @map("is_enabled")
+    deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
+    createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+    workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    schedules  Schedule[]
+    executions Execution[]
+
+    @@unique([workspaceId, name])
+    @@index([workspaceId])
+    @@map("jobs")
+}
+
+/// Binds a Job to a recurring or one-time trigger. The scheduler claims rows from this table.
+model Schedule {
+    id                 String         @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId        String         @map("workspace_id") @db.Uuid
+    jobId              String         @map("job_id") @db.Uuid
+    name               String
+    description        String?
+    scheduleType       ScheduleType   @map("schedule_type")
+    cronExpression     String?        @map("cron_expression")
+    timezone           String         @default("UTC")
+    runAt              DateTime?      @map("run_at") @db.Timestamptz
+    nextRunAt          DateTime?      @map("next_run_at") @db.Timestamptz
+    status             ScheduleStatus @default(active)
+    misfirePolicy      MisfirePolicy  @default(coalesce) @map("misfire_policy")
+    maxRetries         Int            @default(3) @map("max_retries") @db.SmallInt
+    retryBackoffBaseMs Int            @default(60000) @map("retry_backoff_base_ms")
+    lastClaimedAt      DateTime?      @map("last_claimed_at") @db.Timestamptz
+    lastClaimedBy      String?        @map("last_claimed_by")
+    leaseExpiresAt     DateTime?      @map("lease_expires_at") @db.Timestamptz
+    version            Int            @default(0)
+    deletedAt          DateTime?      @map("deleted_at") @db.Timestamptz
+    createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+    workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    job        Job         @relation(fields: [jobId], references: [id])
+    executions Execution[]
+
+    @@unique([workspaceId, name])
+    @@index([jobId])
+    @@index([nextRunAt], where: raw("status = 'active' AND deleted_at IS NULL"), map: "idx_schedules_claim")
+    @@index([workspaceId, createdAt(sort: Desc)], where: raw("deleted_at IS NULL"), map: "idx_schedules_workspace")
+    @@map("schedules")
+}
+
+/// One intended run of a schedule. Persists from creation through terminal state.
+model Execution {
+    id                 String          @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId        String          @map("workspace_id") @db.Uuid
+    scheduleId         String          @map("schedule_id") @db.Uuid
+    jobId              String          @map("job_id") @db.Uuid
+    triggerType        TriggerType     @default(scheduled) @map("trigger_type")
+    triggeredBy        String?         @map("triggered_by") @db.Uuid
+    nominalRunAt       DateTime        @map("nominal_run_at") @db.Timestamptz
+    idempotencyKey     String          @unique @map("idempotency_key")
+    status             ExecutionStatus @default(pending)
+    attemptCount       Int             @default(0) @map("attempt_count") @db.SmallInt
+    maxRetries         Int             @map("max_retries") @db.SmallInt
+    retryBackoffBaseMs Int             @map("retry_backoff_base_ms")
+    nextRetryAt        DateTime?       @map("next_retry_at") @db.Timestamptz
+    leaseHolderId      String?         @map("lease_holder_id")
+    leaseExpiresAt     DateTime?       @map("lease_expires_at") @db.Timestamptz
+    leaseGeneration    Int             @default(0) @map("lease_generation")
+    terminalAt         DateTime?       @map("terminal_at") @db.Timestamptz
+    version            Int             @default(0)
+    createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+    workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+    schedule  Schedule           @relation(fields: [scheduleId], references: [id])
+    job       Job                @relation(fields: [jobId], references: [id])
+    attempts  ExecutionAttempt[]
+    outbox    ExecutionOutbox?
+
+    @@unique([scheduleId, nominalRunAt])
+    @@index([jobId])
+    @@index([workspaceId, createdAt(sort: Desc)], map: "idx_executions_workspace_history")
+    @@index([scheduleId, createdAt(sort: Desc)], map: "idx_executions_schedule_id")
+    @@index([createdAt], where: raw("status = 'pending'"), map: "idx_executions_pending")
+    @@index([nextRetryAt], where: raw("status = 'failed' AND next_retry_at IS NOT NULL"), map: "idx_executions_retry")
+    @@index([leaseExpiresAt], where: raw("status IN ('claimed', 'running')"), map: "idx_executions_lease_recovery")
+    @@map("executions")
+}
+
+/// One delivery attempt per Execution. Append-only once written.
+model ExecutionAttempt {
+    id                 String          @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    executionId        String          @map("execution_id") @db.Uuid
+    workspaceId        String          @map("workspace_id") @db.Uuid
+    attemptNumber      Int             @map("attempt_number") @db.SmallInt
+    workerId           String          @map("worker_id")
+    startedAt          DateTime        @map("started_at") @db.Timestamptz
+    finishedAt         DateTime?       @map("finished_at") @db.Timestamptz
+    outcome            AttemptOutcome?
+    httpStatusCode     Int?            @map("http_status_code") @db.SmallInt
+    durationMs         Int?            @map("duration_ms")
+    responseBodySample String?         @map("response_body_sample")
+    errorMessage       String?         @map("error_message")
+    idempotencyKey     String          @map("idempotency_key")
+    requestHeadersSent Json            @default("{}") @map("request_headers_sent") @db.JsonB
+    createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+    execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+    workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+    @@unique([executionId, attemptNumber])
+    @@index([workspaceId, startedAt(sort: Desc)], map: "idx_execution_attempts_workspace")
+    @@map("execution_attempts")
+}
+
+/// Transactional outbox for scheduler→BullMQ publication.
+model ExecutionOutbox {
+    id           String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    executionId  String    @unique @map("execution_id") @db.Uuid
+    eventType    String    @default("execution.created") @map("event_type")
+    eventVersion Int       @default(1) @map("event_version") @db.SmallInt
+    payload      Json      @db.JsonB
+    publishedAt  DateTime? @map("published_at") @db.Timestamptz
+    attempts     Int       @default(0) @db.SmallInt
+    createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+    execution Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+    @@index([createdAt], where: raw("published_at IS NULL"), map: "idx_execution_outbox_unpublished")
+    @@map("execution_outbox")
+}
+
+/// Append-only log of security-relevant control-plane mutations.
+model AuditEvent {
+    id           String         @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workspaceId  String?        @map("workspace_id") @db.Uuid
+    actorType    AuditActorType @map("actor_type")
+    actorId      String?        @map("actor_id") @db.Uuid
+    eventType    String         @map("event_type")
+    resourceType String?        @map("resource_type")
+    resourceId   String?        @map("resource_id") @db.Uuid
+    metadata     Json           @default("{}") @db.JsonB
+    ipAddress    String?        @map("ip_address")
+    userAgent    String?        @map("user_agent")
+    createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+    workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+    account   Account?   @relation(fields: [actorId], references: [id])
+
+    @@index([workspaceId, createdAt(sort: Desc)], map: "idx_audit_events_workspace")
+    @@index([actorId, createdAt(sort: Desc)], map: "idx_audit_events_actor")
+    @@map("audit_events")
+}
+
+/// Live and recently-seen worker instances. Workers upsert on startup and heartbeat.
+model WorkerRegistration {
+    id             String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    workerId       String    @unique @map("worker_id")
+    hostname       String
+    processId      Int       @map("process_id")
+    version        String
+    queueName      String    @map("queue_name")
+    concurrency    Int       @db.SmallInt
+    lastHeartbeat  DateTime  @default(now()) @map("last_heartbeat") @db.Timestamptz
+    registeredAt   DateTime  @default(now()) @map("registered_at") @db.Timestamptz
+    deregisteredAt DateTime? @map("deregistered_at") @db.Timestamptz
+    createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+    @@index([lastHeartbeat(sort: Desc)], where: raw("deregistered_at IS NULL"), map: "idx_worker_heartbeat_active")
+    @@map("worker_registrations")
+}
