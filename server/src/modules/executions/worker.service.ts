@@ -10,9 +10,10 @@ export async function processExecution(
 	executionId: string,
 	workspaceId: string,
 	deliver: typeof executeWebhook = executeWebhook,
+	leaseMs = 60_000,
 ): Promise<void> {
-	// 1. Claim the execution (leases it to this worker for 60 seconds)
-	const execution = await repo.claimExecution(db, executionId, workerId, 60_000)
+	// 1. Claim the execution with a fenced lease owned by this worker.
+	const execution = await repo.claimExecution(db, executionId, workerId, leaseMs)
 
 	if (!execution) {
 		logger.info({ executionId, workerId }, 'Execution is no longer pending or could not be claimed')
@@ -88,9 +89,10 @@ export async function processExecution(
 		const maxRetries = execution.maxRetries
 		const attemptCount = execution.attemptCount + 1
 
-		if (attemptCount <= maxRetries && response.outcome !== 'ssrf_blocked') {
+		const retryable = response.outcome === 'server_error' || response.outcome === 'timeout' || response.outcome === 'network_error' || response.statusCode === 429
+		if (attemptCount <= maxRetries && retryable) {
 			// Schedule a retry using exponential backoff
-			const backoffMs = execution.retryBackoffBaseMs * Math.pow(2, attemptCount - 1)
+			const backoffMs = Math.min(execution.retryBackoffBaseMs * Math.pow(2, attemptCount - 1), 24 * 60 * 60 * 1000)
 			const nextRetryAt = new Date(Date.now() + backoffMs)
 
 			await repo.scheduleRetry(db, executionId, execution.leaseGeneration, nextRetryAt)

@@ -122,7 +122,7 @@ export async function claimExecution(
 	leaseMs: number
 ): Promise<Execution | null> {
 	const leaseExpiresAt = new Date(Date.now() + leaseMs)
-	const rows = await (db as PrismaClient).$queryRaw<Array<Record<string, unknown>>>`
+	const rows = await db.$queryRaw<Array<Record<string, unknown>>>`
 		UPDATE executions
 		SET status = 'claimed',
 		    lease_holder_id = ${workerId},
@@ -165,7 +165,7 @@ export async function recordOutcome(
 	leaseGeneration: number,
 	status: 'succeeded' | 'failed'
 ): Promise<boolean> {
-	const rows = await (db as PrismaClient).$queryRaw<Array<{ id: string }>>`
+	const rows = await db.$queryRaw<Array<{ id: string }>>`
 		UPDATE executions
 		SET status = ${status}::"ExecutionStatus",
 		    terminal_at = NOW(),
@@ -184,7 +184,7 @@ export async function scheduleRetry(
 	leaseGeneration: number,
 	nextRetryAt: Date
 ): Promise<boolean> {
-	const rows = await (db as PrismaClient).$queryRaw<Array<{ id: string }>>`
+	const rows = await db.$queryRaw<Array<{ id: string }>>`
 		UPDATE executions
 		SET status = 'pending',
 		    next_retry_at = ${nextRetryAt},
@@ -205,7 +205,7 @@ export async function promoteToDlq(
 	executionId: string,
 	leaseGeneration: number
 ): Promise<boolean> {
-	const rows = await (db as PrismaClient).$queryRaw<Array<{ id: string }>>`
+	const rows = await db.$queryRaw<Array<{ id: string }>>`
 		UPDATE executions
 		SET status = 'dead_lettered',
 		    terminal_at = NOW(),
@@ -256,7 +256,7 @@ export async function recoverStaleLease(
 	db: DbClient,
 	executionId: string
 ): Promise<boolean> {
-	const rows = await (db as PrismaClient).$queryRaw<Array<{ id: string }>>`
+	const rows = await db.$queryRaw<Array<{ id: string }>>`
 		UPDATE executions
 		SET status = 'pending',
 		    lease_holder_id = NULL,
@@ -289,7 +289,7 @@ export async function insertAttempt(
 		requestHeadersSent: Record<string, string>
 	}
 ): Promise<void> {
-	await (db as PrismaClient).executionAttempt.create({
+	await db.executionAttempt.create({
 		data: {
 			executionId: data.executionId,
 			workspaceId: data.workspaceId,
@@ -317,5 +317,21 @@ export async function findAttemptsByExecution(
 		where: { executionId, workspaceId },
 		orderBy: { attemptNumber: 'asc' },
 	})
-	return rows as unknown as import('./executions.types.js').ExecutionAttempt[]
+	return rows.map((row) => ({
+		id: row.id,
+		executionId: row.executionId,
+		workspaceId: row.workspaceId,
+		attemptNumber: row.attemptNumber,
+		workerId: row.workerId,
+		startedAt: row.startedAt,
+		finishedAt: row.finishedAt,
+		outcome: row.outcome,
+		httpStatusCode: row.httpStatusCode,
+		durationMs: row.durationMs,
+		responseBodySample: row.responseBodySample,
+		errorMessage: row.errorMessage,
+		idempotencyKey: row.idempotencyKey,
+		requestHeadersSent: (row.requestHeadersSent as Record<string, string>) ?? {},
+		createdAt: row.createdAt,
+	}))
 }
