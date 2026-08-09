@@ -1,0 +1,47 @@
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Build output ─────────────────────────────────────────────────────────────
+dist/
+.next/
+.cache/
+**/.cache/
+server/src/generated/prisma/
+
+# ─── Environment files ────────────────────────────────────────────────────────
+# Never commit secrets. .env.example is the reference template (not ignored).
+.env
+.env.local
+.env.*.local
+server/.env
+client/.env
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Test artifacts ───────────────────────────────────────────────────────────
+coverage/
+.vitest/
+playwright-report/
+test-results/
+output/
+
+# ─── Editor / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── TypeScript ───────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ─── Local tooling ───────────────────────────────────────────────────────────
+.envrc
+.tool-versions.local
+
+# ─── Knowledge base (never pushed to remote) ─────────────────────────────────
+/info/
