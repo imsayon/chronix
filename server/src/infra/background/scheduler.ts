@@ -8,6 +8,7 @@ import { logger } from "../telemetry.js"
 import { processDueSchedules } from "../../modules/schedules/scheduler.service.js"
 import { dispatchPending } from "../../modules/executions/outbox-dispatcher.service.js"
 import { findStaleLeases, recoverStaleLease } from "../../modules/executions/executions.repository.js"
+import { pruneExpiredExecutions } from "../../modules/executions/retention.service.js"
 
 export interface Stoppable {
 	stop(): Promise<void>
@@ -51,12 +52,18 @@ export function startScheduler(
 			})
 			.catch((err) => logger.error({ err }, "Stale lease recovery error."))
 	}, 60_000)
+	const retentionLoop = setInterval(() => {
+		pruneExpiredExecutions(db, clock.now(), config.RETENTION_PRUNE_BATCH_SIZE)
+			.then((deleted) => { if (deleted > 0) logger.info({ deleted }, "Pruned expired execution history.") })
+			.catch((err: unknown) => logger.error({ err }, "Execution retention prune failed."))
+	}, config.RETENTION_PRUNE_INTERVAL_MS)
 
 	return {
 		async stop(): Promise<void> {
 			clearInterval(claimLoop)
 			clearInterval(outboxLoop)
 			clearInterval(staleLeaseLoop)
+			clearInterval(retentionLoop)
 			logger.info({ schedulerId }, "Scheduler stopped.")
 		},
 	}

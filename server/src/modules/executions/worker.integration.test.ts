@@ -168,4 +168,15 @@ describe("worker service integration", () => {
     expect(deliver).toHaveBeenCalledTimes(1);
     expect(await database.executionAttempt.count({ where: { executionId: execution.id } })).toBe(1);
   });
+
+  it("sends stable idempotency and HMAC signature headers", async () => {
+    const execution = await createExecution({ suffix: "signature", maxRetries: 0 });
+    const deliver = vi.fn(async (input: { headers: Record<string, string> }) => {
+      expect(input.headers["X-Chronix-Idempotency-Key"]).toBe(execution.idempotencyKey);
+      expect(input.headers["X-Chronix-Signature"]).toMatch(/^sha256=[a-f0-9]{64}$/);
+      return { outcome: "success" as const, statusCode: 204, durationMs: 2, responseBodySample: null, errorMessage: null };
+    });
+    await processExecution(database, workerId, execution.id, workspaceId, deliver);
+    expect(deliver).toHaveBeenCalledOnce();
+  });
 });

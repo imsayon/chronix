@@ -9,6 +9,7 @@ const validEnvironment = {
   JWT_PRIVATE_KEY: "test-private-key",
   JWT_PUBLIC_KEY: "test-public-key",
   API_KEY_HMAC_SECRET: "test-hmac-secret-that-is-at-least-32-characters",
+  APP_ENCRYPTION_KEY: "chronix-test-encryption-key-32b!",
 };
 
 describe("configSchema", () => {

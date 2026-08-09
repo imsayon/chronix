@@ -127,6 +127,7 @@ model Workspace {
     id        String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
     name      String
     slug      String    @unique
+    retentionDays Int    @default(30) @map("retention_days") @db.SmallInt
     deletedAt DateTime? @map("deleted_at") @db.Timestamptz
     createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
     updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
@@ -190,6 +191,13 @@ model Job {
     httpMethod   HttpMethod @default(POST) @map("http_method")
     headers      Json       @default("{}") @db.JsonB
     bodyTemplate String?    @map("body_template")
+    headersCiphertext      Bytes? @map("headers_ciphertext")
+    headersNonce            Bytes? @map("headers_nonce")
+    bodyTemplateCiphertext  Bytes? @map("body_template_ciphertext")
+    bodyTemplateNonce       Bytes? @map("body_template_nonce")
+    signingSecretCiphertext Bytes? @map("signing_secret_ciphertext")
+    signingSecretNonce      Bytes? @map("signing_secret_nonce")
+    encryptionKeyVersion    Int    @default(1) @map("encryption_key_version") @db.SmallInt
     timeoutMs    Int        @default(30000) @map("timeout_ms")
     isEnabled    Boolean    @default(true) @map("is_enabled")
     version      Int        @default(0)

@@ -11,6 +11,7 @@ export interface Workspace {
 	deletedAt: Date | null
 	createdAt: Date
 	updatedAt: Date
+	retentionDays: number
 }
 
 export interface WorkspaceMembership {
@@ -25,6 +26,7 @@ export interface WorkspaceMembership {
 export interface InsertWorkspaceData {
 	name: string
 	slug: string
+	retentionDays?: number
 }
 
 // ─── Workspace queries ────────────────────────────────────────────────────────
@@ -74,7 +76,7 @@ export async function insertWorkspace(
 export async function updateWorkspace(
 	db: PrismaClient,
 	id: string,
-	data: Partial<{ name: string; slug: string }>,
+	data: Partial<{ name: string; slug: string; retentionDays: number }>,
 ): Promise<Workspace> {
 	const row = await db.workspace.update({ where: { id }, data })
 	return mapWorkspace(row)
@@ -187,6 +189,7 @@ function mapWorkspace(row: {
 	deletedAt: Date | null
 	createdAt: Date
 	updatedAt: Date
+	retentionDays: number
 }): Workspace {
 	return {
 		id: row.id,
@@ -195,6 +198,7 @@ function mapWorkspace(row: {
 		deletedAt: row.deletedAt,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
+		retentionDays: row.retentionDays,
 	}
 }
 

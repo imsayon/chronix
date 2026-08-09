@@ -30,6 +30,7 @@ const createWorkspaceSchema = z.object({
 
 const updateWorkspaceSchema = z.object({
 	name: z.string().min(1).max(100).trim().optional(),
+	retentionDays: z.coerce.number().int().min(1).max(3650).optional(),
 })
 
 const addMemberSchema = z.object({
@@ -97,8 +98,9 @@ export function createWorkspacesRouter(db: PrismaClient): Router {
 			if (!parsed.success) throw new ValidationError(parsed.error.issues)
 			const ctx = buildRequestContext(req, res)
 			// Build update object only with defined fields (exactOptionalPropertyTypes)
-			const update: Partial<{ name: string }> = {}
+			const update: Partial<{ name: string; retentionDays: number }> = {}
 			if (parsed.data.name !== undefined) update.name = parsed.data.name
+			if (parsed.data.retentionDays !== undefined) update.retentionDays = parsed.data.retentionDays
 			const workspace = await workspacesService.updateWorkspace(
 				db,
 				ctx,

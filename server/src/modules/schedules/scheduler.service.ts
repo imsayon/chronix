@@ -1,7 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Config } from '../../common/config/index.js'
 import { logger, registry } from '../../infra/telemetry.js'
-import { Counter } from 'prom-client'
+import { Counter, Histogram } from 'prom-client'
 
 import * as scheduleRepo from './schedules.repository.js'
 import * as executionRepo from '../executions/executions.repository.js'
@@ -14,6 +14,7 @@ const claimTotal = new Counter({
 	labelNames: ['status'],
 	registers: [registry],
 })
+const schedulerLag = new Histogram({ name: 'chronix_scheduler_lag_seconds', help: 'Time between scheduled and observed claim', labelNames: ['status'], registers: [registry] })
 
 export async function processDueSchedules(
 	db: PrismaClient,
@@ -31,6 +32,7 @@ export async function processDueSchedules(
 			const result = await db.$transaction(async (trx) => {
 				const candidate = (await scheduleRepo.findDueSchedules(trx, { now, batchSize: 1 }))[0]
 				if (!candidate) return { found: false, claimed: 0 }
+				schedulerLag.labels('observed').observe(Math.max(0, now.getTime() - candidate.nextRunAt.getTime()) / 1_000)
 
 				const toleranceMs = config.SCHEDULER_TICK_MS * 2
 				const effectiveMisfirePolicy = now.getTime() - candidate.nextRunAt.getTime() <= toleranceMs ? 'coalesce' : candidate.misfirePolicy

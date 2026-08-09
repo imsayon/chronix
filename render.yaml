@@ -1,0 +1,110 @@
+services:
+  - type: web
+    name: chronix-api
+    runtime: node
+    rootDir: server
+    plan: starter
+    buildCommand: corepack pnpm@11.21.0 install --frozen-lockfile && corepack pnpm@11.21.0 prisma:generate && corepack pnpm@11.21.0 build
+    preDeployCommand: corepack pnpm@11.21.0 migrate:deploy
+    startCommand: node dist/app.js
+    healthCheckPath: /health/ready
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chronix-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: chronix-valkey
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: API_KEY_HMAC_SECRET
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+
+  - type: worker
+    name: chronix-scheduler
+    runtime: node
+    rootDir: server
+    plan: starter
+    buildCommand: corepack pnpm@11.21.0 install --frozen-lockfile && corepack pnpm@11.21.0 prisma:generate && corepack pnpm@11.21.0 build
+    startCommand: node dist/worker.js
+    envVars:
+      - key: WORKER_ROLE
+        value: scheduler
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chronix-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: chronix-valkey
+          property: connectionString
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: API_KEY_HMAC_SECRET
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+
+  - type: worker
+    name: chronix-executor
+    runtime: node
+    rootDir: server
+    plan: starter
+    buildCommand: corepack pnpm@11.21.0 install --frozen-lockfile && corepack pnpm@11.21.0 prisma:generate && corepack pnpm@11.21.0 build
+    startCommand: node dist/worker.js
+    envVars:
+      - key: WORKER_ROLE
+        value: executor
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chronix-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: chronix-valkey
+          property: connectionString
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: API_KEY_HMAC_SECRET
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+
+  - type: web
+    name: chronix-client
+    runtime: node
+    rootDir: client
+    plan: starter
+    buildCommand: corepack pnpm@11.21.0 install --frozen-lockfile && corepack pnpm@11.21.0 build
+    startCommand: corepack pnpm@11.21.0 start
+    healthCheckPath: /login
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+  - type: keyvalue
+    name: chronix-valkey
+    plan: starter
+
+databases:
+  - name: chronix-postgres
+    databaseName: chronix
+    user: chronix
+    plan: starter
