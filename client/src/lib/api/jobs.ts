@@ -13,6 +13,7 @@ export interface Job {
   bodyTemplate: string | null;
   timeoutMs: number;
   isEnabled: boolean;
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,10 +40,10 @@ export function useJob(workspaceId: string, jobId: string) {
   return useQuery({
     queryKey: ['job', workspaceId, jobId],
     queryFn: async () => {
-      const res = await apiFetch<{ job: Job }>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}`, {
+      const res = await apiFetch<Job>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}`, {
         headers: getHeaders(),
       });
-      return res.data.job;
+      return res.data;
     },
     enabled: !!workspaceId && !!jobId,
   });
@@ -52,12 +53,12 @@ export function useCreateJob(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: Partial<Job>) => {
-      const res = await apiFetch<{ job: Job }>(`/api/v1/workspaces/${workspaceId}/jobs`, {
+      const res = await apiFetch<Job>(`/api/v1/workspaces/${workspaceId}/jobs`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(data),
       });
-      return res.data.job;
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs', workspaceId] });
@@ -69,12 +70,12 @@ export function useUpdateJob(workspaceId: string, jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: Partial<Job>) => {
-      const res = await apiFetch<{ job: Job }>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}`, {
+      const res = await apiFetch<Job>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}`, {
         method: 'PATCH',
         headers: getHeaders(),
         body: JSON.stringify(data),
       });
-      return res.data.job;
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job', workspaceId, jobId] });
@@ -102,11 +103,11 @@ export function useEnableJob(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (jobId: string) => {
-      const res = await apiFetch<{ job: Job }>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}/enable`, {
+      const res = await apiFetch<Job>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}/enable`, {
         method: 'POST',
         headers: getHeaders(),
       });
-      return res.data.job;
+      return res.data;
     },
     onSuccess: (_, jobId) => {
       queryClient.invalidateQueries({ queryKey: ['job', workspaceId, jobId] });
@@ -119,11 +120,11 @@ export function useDisableJob(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (jobId: string) => {
-      const res = await apiFetch<{ job: Job }>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}/disable`, {
+      const res = await apiFetch<Job>(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}/disable`, {
         method: 'POST',
         headers: getHeaders(),
       });
-      return res.data.job;
+      return res.data;
     },
     onSuccess: (_, jobId) => {
       queryClient.invalidateQueries({ queryKey: ['job', workspaceId, jobId] });

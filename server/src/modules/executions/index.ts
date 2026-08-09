@@ -11,6 +11,7 @@ type WorkspaceParams = { workspaceId: string }
 type ExecutionParams = WorkspaceParams & { executionId: string }
 
 const listExecutionsSchema = z.object({
+	cursor: z.string().min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(100).default(20),
 	scheduleId: z.string().uuid().optional(),
 	jobId: z.string().uuid().optional(),
