@@ -9,6 +9,7 @@ export type Job = {
 	bodyTemplate: string | null
 	timeoutMs: number
 	isEnabled: boolean
+	version: number
 	deletedAt: Date | null
 	createdAt: Date
 	updatedAt: Date
@@ -24,7 +25,7 @@ export type CreateJobInput = {
 	timeoutMs?: number
 }
 
-export type UpdateJobInput = Partial<CreateJobInput>
+export type UpdateJobInput = Partial<CreateJobInput> & { version?: number }
 
 export type ListJobsQuery = {
 	cursor?: string

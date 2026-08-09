@@ -21,6 +21,7 @@ const createJobSchema = z.object({
 })
 
 const updateJobSchema = z.object({
+	version: z.coerce.number().int().min(0).optional(),
 	name: z.string().min(1).max(100).trim().optional(),
 	description: z.string().max(500).trim().nullable().optional(),
 	targetUrl: z.string().url().max(2048).optional(),
