@@ -30,19 +30,13 @@ const createWorkspaceSchema = z.object({
 
 const updateWorkspaceSchema = z.object({
 	name: z.string().min(1).max(100).trim().optional(),
-	slug: z
-		.string()
-		.min(1)
-		.max(63)
-		.regex(/^[a-z0-9-]+$/)
-		.trim()
-		.optional(),
 })
 
 const addMemberSchema = z.object({
-	accountId: z.string().uuid(),
+	accountId: z.string().uuid().optional(),
+	email: z.string().email().optional(),
 	role: z.enum(["owner", "admin", "member", "viewer"]),
-})
+}).refine((value) => value.accountId !== undefined || value.email !== undefined, "An accountId or email is required.")
 
 const updateMemberRoleSchema = z.object({
 	role: z.enum(["owner", "admin", "member", "viewer"]),
@@ -103,9 +97,8 @@ export function createWorkspacesRouter(db: PrismaClient): Router {
 			if (!parsed.success) throw new ValidationError(parsed.error.issues)
 			const ctx = buildRequestContext(req, res)
 			// Build update object only with defined fields (exactOptionalPropertyTypes)
-			const update: Partial<{ name: string; slug: string }> = {}
+			const update: Partial<{ name: string }> = {}
 			if (parsed.data.name !== undefined) update.name = parsed.data.name
-			if (parsed.data.slug !== undefined) update.slug = parsed.data.slug
 			const workspace = await workspacesService.updateWorkspace(
 				db,
 				ctx,
@@ -159,7 +152,8 @@ export function createWorkspacesRouter(db: PrismaClient): Router {
 				ctx,
 				param(req, "workspaceId"),
 				{
-					accountId: parsed.data.accountId,
+					...(parsed.data.accountId !== undefined ? { accountId: parsed.data.accountId } : {}),
+					...(parsed.data.email !== undefined ? { email: parsed.data.email } : {}),
 					role: parsed.data.role as WorkspaceRole,
 				},
 			)

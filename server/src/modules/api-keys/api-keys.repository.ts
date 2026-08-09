@@ -60,8 +60,9 @@ export async function findApiKeysByWorkspace(
   workspaceId: string,
 ): Promise<ApiKey[]> {
   const rows = await db.apiKey.findMany({
-    where: { workspaceId, revokedAt: null },
+    where: { workspaceId },
     orderBy: { createdAt: "desc" },
+    take: 100,
   });
   return rows.map(mapApiKey);
 }
@@ -70,11 +71,12 @@ export async function revokeApiKey(
   db: PrismaClient,
   id: string,
   workspaceId: string,
-): Promise<void> {
-  await db.apiKey.updateMany({
+): Promise<boolean> {
+  const result = await db.apiKey.updateMany({
     where: { id, workspaceId },
     data: { revokedAt: new Date() },
   });
+  return result.count > 0;
 }
 
 // ─── Mapper ───────────────────────────────────────────────────────────────────

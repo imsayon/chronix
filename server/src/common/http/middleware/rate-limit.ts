@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { Redis } from "ioredis";
-import { TooManyRequestsError } from "../../errors/http-errors.js";
+import { ServiceUnavailableError, TooManyRequestsError } from "../../errors/http-errors.js";
 import { newUUIDv7 } from "../../ids.js";
 
 /**
@@ -43,11 +43,6 @@ export interface RateLimitOptions {
 
 export function rateLimitMiddleware(opts: RateLimitOptions) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (process.env["NODE_ENV"] === "test") {
-      next();
-      return;
-    }
-
     const identifier = opts.identifierFn?.(req) ?? (req.ip ?? "unknown");
     const key = `ratelimit:${opts.tier}:${identifier}`;
     const now = Date.now();
@@ -76,8 +71,7 @@ export function rateLimitMiddleware(opts: RateLimitOptions) {
       res.setHeader("X-RateLimit-Limit", String(opts.max));
       next();
     } catch {
-      // If Redis is down, fail open — don't block legitimate traffic
-      next();
+      next(new ServiceUnavailableError("Rate limiting is temporarily unavailable."));
     }
   };
 }
@@ -85,13 +79,13 @@ export function rateLimitMiddleware(opts: RateLimitOptions) {
 // ─── Pre-configured rate limit tiers ─────────────────────────────────────────
 
 export function authLoginRateLimit(redis: Redis) {
-  return rateLimitMiddleware({ redis, tier: "auth:login", windowMs: 15 * 60 * 1000, max: 10 });
+  return rateLimitMiddleware({ redis, tier: "auth:login", windowMs: 15 * 60 * 1000, max: process.env["NODE_ENV"] === "test" ? 1000 : 10 });
 }
 
 export function authRegisterRateLimit(redis: Redis) {
-  return rateLimitMiddleware({ redis, tier: "auth:register", windowMs: 60 * 60 * 1000, max: 5 });
+  return rateLimitMiddleware({ redis, tier: "auth:register", windowMs: 60 * 60 * 1000, max: process.env["NODE_ENV"] === "test" ? 1000 : 5 });
 }
 
 export function authRefreshRateLimit(redis: Redis) {
-  return rateLimitMiddleware({ redis, tier: "auth:refresh", windowMs: 60 * 1000, max: 30 });
+  return rateLimitMiddleware({ redis, tier: "auth:refresh", windowMs: 60 * 1000, max: process.env["NODE_ENV"] === "test" ? 1000 : 30 });
 }

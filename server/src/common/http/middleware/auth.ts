@@ -55,11 +55,27 @@ async function resolveJwt(
 
   // Look up the membership for the workspace in the token
   const membership = await db.workspaceMembership.findFirst({
-    where: { accountId: payload.sub, workspaceId: payload.wid },
+    where: {
+      accountId: payload.sub,
+      workspaceId: payload.wid,
+      workspace: { deletedAt: null },
+      account: { isActive: true },
+    },
     select: { role: true },
   });
 
   if (membership === null) return null;
+
+  const activeSession = await db.refreshToken.findFirst({
+    where: {
+      accountId: payload.sub,
+      familyId: payload.sid,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  });
+  if (activeSession === null) return null;
 
   return {
     type: "account",
@@ -101,7 +117,7 @@ async function resolveApiKey(
 
   // Update last_used_at asynchronously — never block the request
   void db.apiKey
-    .update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } })
+    .updateMany({ where: { id: apiKey.id, revokedAt: null }, data: { lastUsedAt: new Date() } })
     .catch((err: unknown) => logger.error({ err }, "Failed to update api_key.last_used_at"));
 
   return {
@@ -109,6 +125,19 @@ async function resolveApiKey(
     keyId: apiKey.id,
     workspaceId: apiKey.workspaceId,
     role: "admin" as WorkspaceRole, // API key role ceiling — scopes narrow further in services
-    scopes: apiKey.scopes as ApiKeyScope[],
+    scopes: apiKey.scopes.map(toDomainScope),
   };
+}
+
+function toDomainScope(scope: string): ApiKeyScope {
+  const mapping: Record<string, ApiKeyScope> = {
+    schedules_read: "schedules:read",
+    schedules_write: "schedules:write",
+    executions_read: "executions:read",
+    executions_trigger: "executions:trigger",
+    admin: "admin",
+  };
+  const mapped = mapping[scope];
+  if (mapped === undefined) throw new Error("Unknown API key scope.");
+  return mapped;
 }

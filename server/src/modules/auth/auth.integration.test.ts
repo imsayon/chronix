@@ -186,6 +186,26 @@ describe("POST /api/v1/auth/refresh", () => {
     expect(rotation2.body.error.code).toBe("REFRESH_TOKEN_REUSE");
   });
 
+  it("serializes concurrent rotation so exactly one request wins", async () => {
+    const email = uniqueEmail();
+    const regRes = await registerUser(email);
+    const originalCookie = ((regRes.headers["set-cookie"] as unknown) as string[])[0]!;
+
+    const [first, second] = await Promise.all([
+      app.post("/api/v1/auth/refresh").set("Cookie", originalCookie),
+      app.post("/api/v1/auth/refresh").set("Cookie", originalCookie),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 401]);
+    const failed = first.status === 401 ? first : second;
+    expect(failed.body.error.code).toBe("REFRESH_TOKEN_REUSE");
+
+    const rotatedCookie = first.status === 200
+      ? ((first.headers["set-cookie"] as unknown) as string[])[0]!
+      : ((second.headers["set-cookie"] as unknown) as string[])[0]!;
+    const afterReuse = await app.post("/api/v1/auth/refresh").set("Cookie", rotatedCookie);
+    expect(afterReuse.status).toBe(401);
+  });
+
   it("returns 401 with no cookie", async () => {
     const res = await app.post("/api/v1/auth/refresh");
     expect(res.status).toBe(401);
@@ -217,7 +237,7 @@ describe("GET /api/v1/auth/me", () => {
       .get("/api/v1/auth/me")
       .set("Authorization", `Bearer ${accessToken}`);
     expect(meRes.status).toBe(200);
-    expect(meRes.body.data.auth.type).toBe("account");
+    expect(meRes.body.data.account.email).toBe(email);
   });
 
   it("returns 401 without auth", async () => {
@@ -244,6 +264,20 @@ describe("Workspace routes", () => {
   it("GET /api/v1/workspaces returns 401 without auth", async () => {
     const res = await app.get("/api/v1/workspaces");
     expect(res.status).toBe(401);
+  });
+
+  it("denies cross-workspace access without disclosing existence", async () => {
+    const first = await registerUser(uniqueEmail());
+    const second = await registerUser(uniqueEmail());
+    const firstToken = first.body.data.accessToken as string;
+    const secondWorkspace = (await app
+      .get("/api/v1/workspaces")
+      .set("Authorization", `Bearer ${second.body.data.accessToken as string}`)).body.data.workspaces[0].id as string;
+
+    const response = await app
+      .get(`/api/v1/workspaces/${secondWorkspace}`)
+      .set("Authorization", `Bearer ${firstToken}`);
+    expect(response.status).toBe(404);
   });
 });
 
@@ -338,7 +372,8 @@ describe("Workspace membership routes", () => {
     const removeRes = await app
       .delete(`/api/v1/workspaces/${wsId}/members/${ownerId}`)
       .set("Authorization", `Bearer ${ownerToken}`);
-    expect(removeRes.status).toBe(400);
+    expect(removeRes.status).toBe(409);
+    expect(removeRes.body.error.code).toBe("LAST_OWNER");
   });
 });
 
@@ -368,7 +403,7 @@ describe("API key routes", () => {
 
     // Use the key
     const meRes = await app
-      .get("/api/v1/auth/me")
+      .get(`/api/v1/workspaces/${wsId}`)
       .set("Authorization", `Bearer ${rawKey}`);
     expect(meRes.status).toBe(200);
 
@@ -383,5 +418,26 @@ describe("API key routes", () => {
       .get("/api/v1/auth/me")
       .set("Authorization", `Bearer ${rawKey}`);
     expect(meRes2.status).toBe(401);
+  });
+
+  it("enforces API-key scopes on tenant resources", async () => {
+    const regRes = await registerUser(uniqueEmail());
+    const accessToken = regRes.body.data.accessToken as string;
+    const wsId = (await app.get("/api/v1/workspaces").set("Authorization", `Bearer ${accessToken}`)).body.data.workspaces[0].id as string;
+    const keyRes = await app
+      .post(`/api/v1/workspaces/${wsId}/api-keys`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ name: "Read-only", scopes: ["schedules:read"] });
+    const rawKey = keyRes.body.data.key as string;
+    const jobsRes = await app
+      .get(`/api/v1/workspaces/${wsId}/jobs`)
+      .set("Authorization", `Bearer ${rawKey}`);
+    expect(jobsRes.status).toBe(200);
+
+    const createRes = await app
+      .post(`/api/v1/workspaces/${wsId}/jobs`)
+      .set("Authorization", `Bearer ${rawKey}`)
+      .send({ name: "forbidden", targetUrl: "https://example.com" });
+    expect(createRes.status).toBe(403);
   });
 });

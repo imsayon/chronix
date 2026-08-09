@@ -1,7 +1,8 @@
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { Config } from "../../common/config/index.js";
 import type { RequestContext, ApiKeyScope } from "../../common/auth.types.js";
-import { requireWorkspaceRole, requireDashboardAuth } from "../../common/auth.guards.js";
+import { requireWorkspaceRole, requireDashboardAuth, requireWorkspaceAccess } from "../../common/auth.guards.js";
+import { BadRequestError, NotFoundError } from "../../common/errors/http-errors.js";
 import { hashApiKey, randomBase64Url } from "../../common/crypto.js";
 import { writeAuditEvent } from "../../common/audit.js";
 import { insertApiKey, findApiKeysByWorkspace, revokeApiKey } from "./api-keys.repository.js";
@@ -43,7 +44,12 @@ export async function createApiKey(
 ): Promise<CreateApiKeyResult> {
   // API keys can only be created via interactive (JWT) auth
   requireDashboardAuth(ctx);
+  requireWorkspaceAccess(ctx, workspaceId);
   requireWorkspaceRole(ctx, "admin");
+
+  if (input.expiresAt !== undefined && input.expiresAt <= new Date()) {
+    throw new BadRequestError("API key expiry must be in the future.");
+  }
 
   const { raw, prefix } = generateRawApiKey();
   const keyHash = hashApiKey(raw, config.API_KEY_HMAC_SECRET);
@@ -67,6 +73,7 @@ export async function listApiKeys(
   ctx: RequestContext,
   workspaceId: string,
 ): Promise<ApiKey[]> {
+  requireWorkspaceAccess(ctx, workspaceId);
   requireWorkspaceRole(ctx, "admin");
   return findApiKeysByWorkspace(db, workspaceId);
 }
@@ -79,7 +86,9 @@ export async function revokeKey(
 ): Promise<void> {
   // API keys cannot revoke API keys
   requireDashboardAuth(ctx);
+  requireWorkspaceAccess(ctx, workspaceId);
   requireWorkspaceRole(ctx, "admin");
-  await revokeApiKey(db, keyId, workspaceId);
+  const revoked = await revokeApiKey(db, keyId, workspaceId);
+  if (!revoked) throw new NotFoundError("API key not found.");
   await writeAuditEvent(db, ctx, workspaceId, "api_key.revoked", { keyId });
 }

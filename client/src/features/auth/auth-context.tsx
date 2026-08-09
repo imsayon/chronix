@@ -40,6 +40,7 @@ export interface AuthContextValue extends AuthState {
 	) => Promise<void>
 	logout: () => Promise<void>
 	refreshToken: () => Promise<boolean>
+	selectWorkspace: (workspaceId: string) => Promise<void>
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -80,21 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 
 			try {
-				const meRes = await apiFetch<{
-					auth: { accountId: string; workspaceId: string }
-				}>("/api/v1/auth/me", {
+				const meRes = await apiFetch<{ account: AuthAccount }>("/api/v1/auth/me", {
 					headers: { Authorization: `Bearer ${getAccessToken()}` },
 				})
 				if (!cancelled) {
-					// We have auth context — fetch the full account detail if needed
-					// For now, we store the accountId; full account comes from a /accounts/me endpoint (Phase 2+)
-					setAccount({
-						id: meRes.data.auth.accountId,
-						email: "",
-						displayName: "",
-						isActive: true,
-						createdAt: new Date().toISOString(),
-					})
+					setAccount(meRes.data.account)
 				}
 			} catch {
 				clearSession()
@@ -144,6 +135,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}
 	}, [])
 
+	const selectWorkspace = useCallback(async (workspaceId: string) => {
+		const res = await apiFetch<{ accessToken: string }>("/api/v1/auth/workspace", {
+			method: "POST",
+			headers: { Authorization: `Bearer ${getAccessToken()}` },
+			body: JSON.stringify({ workspaceId }),
+		})
+		setSession(res.data.accessToken)
+	}, [])
+
 	return (
 		<AuthContext.Provider
 			value={{
@@ -154,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				register,
 				logout,
 				refreshToken,
+				selectWorkspace,
 			}}
 		>
 			{children}

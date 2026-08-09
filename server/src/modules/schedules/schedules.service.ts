@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { RequestContext } from '../../common/auth.types.js'
-import { requireAuth } from '../../common/auth.guards.js'
+import { requireWorkspaceAccess, requireScope } from '../../common/auth.guards.js'
 import { writeAuditEvent } from '../../common/audit.js'
 import { DateTime } from 'luxon'
 
@@ -29,7 +29,8 @@ function validateTimezone(timezone: string) {
 }
 
 export async function createSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, input: CreateScheduleInput): Promise<Schedule> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:write')
 
 	const job = await jobRepo.findJobById(db, input.jobId, workspaceId)
 	if (!job) {
@@ -82,12 +83,14 @@ export async function createSchedule(db: PrismaClient, ctx: RequestContext, work
 }
 
 export async function listSchedules(db: PrismaClient, ctx: RequestContext, workspaceId: string, query: ListSchedulesQuery) {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:read')
 	return repo.findSchedulesByWorkspace(db, workspaceId, query)
 }
 
 export async function getSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string): Promise<Schedule> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:read')
 	const schedule = await repo.findScheduleById(db, scheduleId, workspaceId)
 	if (!schedule) {
 		throw new ScheduleNotFoundError(scheduleId)
@@ -96,7 +99,8 @@ export async function getSchedule(db: PrismaClient, ctx: RequestContext, workspa
 }
 
 export async function updateSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string, input: UpdateScheduleInput): Promise<Schedule> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:write')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
 
 	const updates: Parameters<typeof repo.updateSchedule>[3] = { ...input }
@@ -132,7 +136,8 @@ export async function updateSchedule(db: PrismaClient, ctx: RequestContext, work
 }
 
 export async function pauseSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string): Promise<Schedule> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:write')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
 	if (schedule.status === 'paused') {
 		throw new ScheduleAlreadyPausedError()
@@ -151,7 +156,8 @@ export async function pauseSchedule(db: PrismaClient, ctx: RequestContext, works
 }
 
 export async function resumeSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string): Promise<Schedule> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:write')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
 	if (schedule.status !== 'paused') {
 		throw new ScheduleNotPausedError()
@@ -189,7 +195,8 @@ export async function resumeSchedule(db: PrismaClient, ctx: RequestContext, work
 }
 
 export async function deleteSchedule(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string): Promise<void> {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'schedules:write')
 	const deleted = await repo.softDeleteSchedule(db, scheduleId, workspaceId)
 	if (!deleted) {
 		throw new ScheduleNotFoundError(scheduleId)
@@ -198,7 +205,8 @@ export async function deleteSchedule(db: PrismaClient, ctx: RequestContext, work
 }
 
 export async function triggerManual(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string) {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'executions:trigger')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
 
 	const job = await jobRepo.findJobById(db, schedule.jobId, workspaceId)

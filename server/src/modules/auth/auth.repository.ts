@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../../generated/prisma/client.js";
+import type { PrismaClient, Prisma } from "../../generated/prisma/client.js";
 import type { Account, RefreshToken } from "../../common/auth.types.js";
 
 // ─── Account ──────────────────────────────────────────────────────────────────
@@ -31,20 +31,21 @@ export async function insertAccount(
 
 export interface InsertRefreshTokenData {
   accountId: string;
+  workspaceId: string | null;
   tokenHash: string;
   familyId: string;
   expiresAt: Date;
 }
 
 export async function insertRefreshToken(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   data: InsertRefreshTokenData,
 ): Promise<void> {
   await db.refreshToken.create({ data });
 }
 
 export async function findRefreshTokenByHash(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   tokenHash: string,
 ): Promise<RefreshToken | null> {
   const row = await db.refreshToken.findUnique({ where: { tokenHash } });
@@ -52,7 +53,7 @@ export async function findRefreshTokenByHash(
 }
 
 export async function revokeRefreshToken(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   id: string,
 ): Promise<void> {
   await db.refreshToken.update({
@@ -62,7 +63,7 @@ export async function revokeRefreshToken(
 }
 
 export async function revokeRefreshTokenFamily(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   familyId: string,
 ): Promise<void> {
   await db.refreshToken.updateMany({
@@ -96,6 +97,7 @@ function mapAccount(row: {
 function mapRefreshToken(row: {
   id: string;
   accountId: string;
+  workspaceId: string | null;
   tokenHash: string;
   familyId: string;
   revokedAt: Date | null;
@@ -106,6 +108,7 @@ function mapRefreshToken(row: {
   return {
     id: row.id,
     accountId: row.accountId,
+    workspaceId: row.workspaceId,
     tokenHash: row.tokenHash,
     familyId: row.familyId,
     revokedAt: row.revokedAt,

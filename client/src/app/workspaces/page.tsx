@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api/client';
 import { getAccessToken } from '@/lib/auth';
 
 export default function WorkspacesPage() {
-  const { isAuthenticated, isLoading, account, logout } = useAuth();
+  const { isAuthenticated, isLoading, account, logout, selectWorkspace } = useAuth();
   const router = useRouter();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -97,7 +97,7 @@ export default function WorkspacesPage() {
         ) : (
           <div className="ws-grid">
             {workspaces.map((ws) => (
-              <WorkspaceCard key={ws.id} workspace={ws} />
+              <WorkspaceCard key={ws.id} workspace={ws} onSelect={selectWorkspace} />
             ))}
           </div>
         )}
