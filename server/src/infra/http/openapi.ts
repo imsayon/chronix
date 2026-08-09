@@ -61,6 +61,22 @@ export function buildOpenApiDocument(): Record<string, unknown> {
 		request: { params: z.object({ workspaceId: z.string().uuid(), scheduleId: z.string().uuid() }), headers: z.object({ 'Idempotency-Key': z.string().min(1).max(128).optional() }) },
 		responses: { 202: { description: 'Execution accepted', content: { 'application/json': { schema: responseSchema } } }, 409: { description: 'Duplicate or conflicting request', content: { 'application/json': { schema: errorSchema } } } },
 	})
+	registry.registerPath({
+		method: 'post',
+		path: '/api/v1/workspaces/{workspaceId}/jobs/{jobId}/signing-secret/rotate',
+		tags: ['Jobs'],
+		security: [{ bearerAuth: [] }],
+		request: { params: z.object({ workspaceId: z.string().uuid(), jobId: z.string().uuid() }) },
+		responses: { 200: { description: 'One-time signing secret rotation response', content: { 'application/json': { schema: responseSchema } } }, 403: { description: 'Dashboard administrator required', content: { 'application/json': { schema: errorSchema } } } },
+	})
+	registry.registerPath({
+		method: 'get',
+		path: '/api/v1/workspaces/{workspaceId}/executions/export',
+		tags: ['Executions'],
+		security: [{ bearerAuth: [] }],
+		request: { params: z.object({ workspaceId: z.string().uuid() }), query: z.object({ limit: z.coerce.number().int().min(1).max(10_000).default(10_000) }) },
+		responses: { 200: { description: 'Bounded CSV execution export', content: { 'text/csv': { schema: z.string() } } } },
+	})
 
 	return new OpenApiGeneratorV31(registry.definitions).generateDocument({
 		openapi: '3.1.0',
