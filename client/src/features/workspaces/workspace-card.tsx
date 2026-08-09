@@ -1,6 +1,8 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import type { MouseEvent } from "react"
 
 export interface Workspace {
 	id: string
@@ -11,11 +13,20 @@ export interface Workspace {
 
 interface WorkspaceCardProps {
 	workspace: Workspace
+	onSelect?: (workspaceId: string) => Promise<void>
 }
 
-export function WorkspaceCard({ workspace }: WorkspaceCardProps) {
+export function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
+	const router = useRouter()
+	async function handleSelect(event: MouseEvent<HTMLAnchorElement>) {
+		if (onSelect === undefined || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+		event.preventDefault()
+		await onSelect(workspace.id)
+		router.push(`/workspaces/${workspace.id}`)
+	}
+
 	return (
-		<Link href={`/workspaces/${workspace.id}`} className="ws-card">
+		<Link href={`/workspaces/${workspace.id}`} onClick={(event) => { void handleSelect(event) }} className="ws-card">
 			<div className="ws-card__icon" aria-hidden>
 				{workspace.name.slice(0, 2).toUpperCase()}
 			</div>

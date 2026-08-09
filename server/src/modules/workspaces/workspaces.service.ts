@@ -86,16 +86,18 @@ export async function addMember(
   db: PrismaClient,
   ctx: RequestContext,
   workspaceId: string,
-  input: { accountId: string; role: WorkspaceRole },
+	input: { accountId?: string; email?: string; role: WorkspaceRole },
 ): Promise<WorkspaceMembership> {
   const auth = requireAuth(ctx);
   if (auth.workspaceId !== workspaceId) throw new NotFoundError("Workspace not found.");
   requireWorkspaceRole(ctx, "admin");
   if (input.role === "owner") requireWorkspaceRole(ctx, "owner");
-  const account = await db.account.findUnique({ where: { id: input.accountId }, select: { id: true, isActive: true } });
-  if (account === null || !account.isActive) throw new AccountNotFoundError();
-  const membership = await repo.addMember(db, workspaceId, input.accountId, input.role);
-  await writeAuditEvent(db, ctx, workspaceId, "workspace.member_added", { membershipId: membership.id, targetAccountId: input.accountId, role: input.role });
+	const account = input.accountId !== undefined
+		? await db.account.findUnique({ where: { id: input.accountId }, select: { id: true, isActive: true } })
+		: await db.account.findUnique({ where: { email: input.email?.toLowerCase().trim() ?? "" }, select: { id: true, isActive: true } });
+	if (account === null || !account.isActive) throw new AccountNotFoundError();
+	const membership = await repo.addMember(db, workspaceId, account.id, input.role);
+	await writeAuditEvent(db, ctx, workspaceId, "workspace.member_added", { membershipId: membership.id, targetAccountId: membership.accountId, role: input.role });
   return membership;
 }
 
@@ -109,16 +111,13 @@ export async function removeMember(
   if (auth.workspaceId !== workspaceId) throw new NotFoundError("Workspace not found.");
   requireWorkspaceRole(ctx, "admin");
 
-  const target = await repo.findMembership(db, workspaceId, targetAccountId);
-  if (target === null) throw new NotFoundError("Member not found.");
-  if (target.role === "owner") {
-    const ownerCount = await repo.countOwners(db, workspaceId);
-    if (ownerCount <= 1) throw new LastOwnerError();
-    requireWorkspaceRole(ctx, "owner");
-  }
-
-  await repo.removeMember(db, workspaceId, targetAccountId);
-  await writeAuditEvent(db, ctx, workspaceId, "workspace.member_removed", { membershipId: target.id, targetAccountId });
+	const target = await repo.findMembership(db, workspaceId, targetAccountId);
+	if (target === null) throw new NotFoundError("Member not found.");
+	if (target.role === "owner") requireWorkspaceRole(ctx, "owner");
+	const result = await repo.removeMember(db, workspaceId, targetAccountId);
+	if (result === "last_owner") throw new LastOwnerError();
+	if (result === "missing") throw new NotFoundError("Member not found.");
+	await writeAuditEvent(db, ctx, workspaceId, "workspace.member_removed", { membershipId: target.id, targetAccountId });
 }
 
 export async function updateMemberRole(

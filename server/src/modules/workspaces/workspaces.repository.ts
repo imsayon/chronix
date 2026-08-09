@@ -1,6 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
 import type { WorkspaceRole } from "../../common/auth.types.js"
-import { MemberAlreadyExistsError } from "../../common/errors/http-errors.js"
+import { MemberAlreadyExistsError, WorkspaceSlugTakenError } from "../../common/errors/http-errors.js"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,8 +63,12 @@ export async function insertWorkspace(
 	db: PrismaClient,
 	data: InsertWorkspaceData,
 ): Promise<Workspace> {
-	const row = await db.workspace.create({ data })
-	return mapWorkspace(row)
+	try {
+		const row = await db.workspace.create({ data })
+		return mapWorkspace(row)
+	} catch {
+		throw new WorkspaceSlugTakenError()
+	}
 }
 
 export async function updateWorkspace(
@@ -106,6 +110,7 @@ export async function listMembers(
 	const rows = await db.workspaceMembership.findMany({
 		where: { workspaceId },
 		orderBy: { createdAt: "asc" },
+		take: 100,
 	})
 	return rows.map(mapMembership)
 }
@@ -130,9 +135,22 @@ export async function removeMember(
 	db: PrismaClient,
 	workspaceId: string,
 	accountId: string,
-): Promise<void> {
-	await db.workspaceMembership.delete({
-		where: { workspaceId_accountId: { workspaceId, accountId } },
+): Promise<"removed" | "missing" | "last_owner"> {
+	return db.$transaction(async (trx) => {
+		const member = await trx.workspaceMembership.findUnique({
+			where: { workspaceId_accountId: { workspaceId, accountId } },
+			select: { role: true },
+		})
+		if (member === null) return "missing"
+		if (member.role === "owner") {
+			const owners = await trx.workspaceMembership.findMany({
+				where: { workspaceId, role: "owner" },
+				select: { id: true },
+			})
+			if (owners.length <= 1) return "last_owner"
+		}
+		await trx.workspaceMembership.delete({ where: { workspaceId_accountId: { workspaceId, accountId } } })
+		return "removed"
 	})
 }
 

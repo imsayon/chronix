@@ -14,7 +14,7 @@ const API_KEY_SCOPES = ["schedules:read", "schedules:write", "executions:read", 
 
 const createApiKeySchema = z.object({
   name: z.string().min(1).max(100).trim(),
-  scopes: z.array(z.enum(API_KEY_SCOPES)).min(1),
+  scopes: z.array(z.enum(API_KEY_SCOPES)).min(1).max(API_KEY_SCOPES.length).refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique."),
   expiresAt: z.string().datetime().optional(),
 });
 

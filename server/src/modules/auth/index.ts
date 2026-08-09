@@ -6,6 +6,7 @@ import type { Redis } from "ioredis";
 import { success } from "../../common/http/envelope.js";
 import { buildRequestContext, requireDashboardAuth } from "../../common/auth.guards.js";
 import { ValidationError } from "../../common/errors/http-errors.js";
+import { SessionExpiredError } from "../../common/auth.errors.js";
 import { authLoginRateLimit, authRegisterRateLimit, authRefreshRateLimit } from "../../common/http/middleware/rate-limit.js";
 import * as authService from "./auth.service.js";
 
@@ -103,8 +104,7 @@ export function createAuthRouter(db: PrismaClient, config: Config, redis: Redis)
       try {
         const rawToken: unknown = (req.cookies as Record<string, unknown>)[REFRESH_COOKIE];
         if (typeof rawToken !== "string" || rawToken.length === 0) {
-          res.status(401).json({ error: { code: "SESSION_EXPIRED", message: "No refresh token." } });
-          return;
+          throw new SessionExpiredError();
         }
 
         const ctx = buildRequestContext(req, res);
