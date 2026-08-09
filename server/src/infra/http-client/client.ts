@@ -113,7 +113,7 @@ function pinnedAgent(url: URL, address: ResolvedAddress): Agent {
 			if (options.protocol === 'https:') {
 				const socket = tls.connect({ ...connectOptions, servername: hostname })
 				socket.once('error', (error) => callback(error, null))
-				socket.once('connect', () => callback(null, socket))
+				socket.once('secureConnect', () => callback(null, socket))
 				return
 			}
 			const socket = net.connect(connectOptions)
