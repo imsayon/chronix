@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify, importPKCS8, importSPKI } from "jose";
+import type { CryptoKey } from "jose";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,21 +23,23 @@ const ACCESS_TOKEN_TTL = 900; // 15 minutes in seconds
 // This prevents the module-singleton anti-pattern where a second different PEM
 // is silently ignored because the first import was cached.
 
-const privateKeyCache = new Map<string, any>();
-const publicKeyCache = new Map<string, any>();
+const privateKeyCache = new Map<string, CryptoKey>();
+const publicKeyCache = new Map<string, CryptoKey>();
 
-export async function getPrivateKey(pem: string): Promise<any> {
-  if (!privateKeyCache.has(pem)) {
-    privateKeyCache.set(pem, await importPKCS8(pem, ALGORITHM));
-  }
-  return privateKeyCache.get(pem);
+export async function getPrivateKey(pem: string): Promise<CryptoKey> {
+  const cached = privateKeyCache.get(pem);
+  if (cached !== undefined) return cached;
+  const imported = await importPKCS8(pem, ALGORITHM);
+  privateKeyCache.set(pem, imported);
+  return imported;
 }
 
-export async function getPublicKey(pem: string): Promise<any> {
-  if (!publicKeyCache.has(pem)) {
-    publicKeyCache.set(pem, await importSPKI(pem, ALGORITHM));
-  }
-  return publicKeyCache.get(pem);
+export async function getPublicKey(pem: string): Promise<CryptoKey> {
+  const cached = publicKeyCache.get(pem);
+  if (cached !== undefined) return cached;
+  const imported = await importSPKI(pem, ALGORITHM);
+  publicKeyCache.set(pem, imported);
+  return imported;
 }
 
 // ─── Sign ─────────────────────────────────────────────────────────────────────
@@ -62,9 +65,26 @@ export async function verifyAccessToken(
   publicKeyPem: string,
 ): Promise<AccessTokenPayload> {
   const key = await getPublicKey(publicKeyPem);
-  const { payload } = await jwtVerify<AccessTokenPayload>(token, key, {
+  const { payload } = await jwtVerify(token, key, {
     issuer: ISSUER,
     algorithms: [ALGORITHM], // explicit — prevents algorithm-confusion attacks
   });
-  return payload as AccessTokenPayload;
+  if (
+    typeof payload.sub !== "string" ||
+    typeof payload["wid"] !== "string" ||
+    typeof payload["sid"] !== "string" ||
+    typeof payload.iat !== "number" ||
+    typeof payload.exp !== "number" ||
+    payload.iss !== ISSUER
+  ) {
+    throw new Error("Access token payload is incomplete.");
+  }
+  return {
+    sub: payload.sub,
+    wid: payload["wid"],
+    sid: payload["sid"],
+    iat: payload.iat,
+    exp: payload.exp,
+    iss: payload.iss,
+  };
 }

@@ -1,4 +1,5 @@
 import { request, Agent, setGlobalDispatcher } from 'undici'
+import type { Dispatcher } from 'undici'
 import * as dns from 'node:dns'
 import net from 'node:net'
 import { isIpBlocked, SsrfBlockedError } from './ssrf-check.js'
@@ -49,12 +50,12 @@ const ssrfProtectedAgent = new Agent({
 				const ips: string[] = []
 				try {
 					ips.push(...(await resolveV4(hostname)))
-				} catch (e) {
+				} catch {
 					// Ignore ENOTFOUND
 				}
 				try {
 					ips.push(...(await resolveV6(hostname)))
-				} catch (e) {
+				} catch {
 					// Ignore ENOTFOUND
 				}
 
@@ -126,14 +127,13 @@ export async function executeWebhook(
 
 	try {
 		const res = await request(url, {
-			method: method as any,
+			method: method as Dispatcher.HttpMethod,
 			headers: reqHeaders,
-			body: body ? body : undefined,
-			maxRedirections: 3,
+			...(body === null ? {} : { body }),
 			bodyTimeout: timeoutMs,
 			headersTimeout: timeoutMs,
 			dispatcher: ssrfProtectedAgent,
-		} as Parameters<typeof request>[1])
+		})
 
 		const endTime = process.hrtime.bigint()
 		const durationMs = Number(endTime - startTime) / 1_000_000
@@ -160,27 +160,31 @@ export async function executeWebhook(
 			errorMessage: null
 		}
 
-	} catch (error: any) {
+	} catch (error: unknown) {
 		const endTime = process.hrtime.bigint()
 		const durationMs = Math.round(Number(endTime - startTime) / 1_000_000)
+		const message = error instanceof Error ? error.message : "Unknown delivery failure"
+		const code = typeof error === "object" && error !== null && "code" in error
+			? error.code
+			: undefined
 
-		if (error instanceof SsrfBlockedError || error?.message?.includes('blocked address')) {
+		if (error instanceof SsrfBlockedError || message.includes('blocked address')) {
 			return {
 				outcome: 'ssrf_blocked',
 				statusCode: null,
 				durationMs,
 				responseBodySample: null,
-				errorMessage: error.message
+				errorMessage: message
 			}
 		}
 
-		if (error.code === 'UND_ERR_HEADERS_TIMEOUT' || error.code === 'UND_ERR_BODY_TIMEOUT' || error.message.includes('timeout')) {
+		if (code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT' || message.toLowerCase().includes('timeout')) {
 			return {
 				outcome: 'timeout',
 				statusCode: null,
 				durationMs,
 				responseBodySample: null,
-				errorMessage: error.message
+				errorMessage: message
 			}
 		}
 
@@ -189,7 +193,7 @@ export async function executeWebhook(
 			statusCode: null,
 			durationMs,
 			responseBodySample: null,
-			errorMessage: error.message
+			errorMessage: message
 		}
 	}
 }

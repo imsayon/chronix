@@ -1,6 +1,6 @@
 import type { WorkspaceRole, ApiKeyScope, RequestContext } from "./auth.types.js";
 import { roleAtLeast } from "./auth.types.js";
-import { UnauthorizedError, ForbiddenError } from "./errors/http-errors.js";
+import { UnauthorizedError, ForbiddenError, NotFoundError } from "./errors/http-errors.js";
 import type { Request, Response } from "express";
 
 type Auth = NonNullable<RequestContext["auth"]>;
@@ -11,6 +11,13 @@ type AccountAuth = Extract<Auth, { type: "account" }>;
 export function requireAuth(ctx: RequestContext): Auth {
   if (ctx.auth === null) throw new UnauthorizedError();
   return ctx.auth;
+}
+
+/** Enforce the route tenant boundary without disclosing another workspace. */
+export function requireWorkspaceAccess(ctx: RequestContext, workspaceId: string): Auth {
+  const auth = requireAuth(ctx);
+  if (auth.workspaceId !== workspaceId) throw new NotFoundError("Workspace not found.");
+  return auth;
 }
 
 // ─── Require minimum workspace role ──────────────────────────────────────────

@@ -1,95 +1,102 @@
-import * as dns from 'node:dns'
-import { AppError } from '../../common/errors/AppError.js'
+import dns from "node:dns/promises";
+import net from "node:net";
+import type { LookupAddress } from "node:dns";
+import { AppError } from "../../common/errors/AppError.js";
 
 export class SsrfBlockedError extends AppError {
-	constructor(reason: string) {
-		super('SSRF_BLOCKED', `Target URL is blocked: ${reason}`, 422)
-	}
+  constructor(reason: string) {
+    super("SSRF_BLOCKED", `Target URL is blocked: ${reason}`, 422);
+  }
 }
 
-function isIpInCidr(ip: string, cidr: string): boolean {
-	const parts = cidr.split('/')
-	const range = parts[0] ?? ''
-	const bits = parts[1] ?? '32'
-	const mask = ~(2 ** (32 - parseInt(bits, 10)) - 1)
+const blockedAddresses = new net.BlockList();
 
-	const ipToNumber = (address: string) =>
-		address.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0)
-
-	const ipNum = ipToNumber(ip)
-	const rangeNum = ipToNumber(range)
-
-	return (ipNum & mask) === (rangeNum & mask)
+for (const [network, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const) {
+  blockedAddresses.addSubnet(network, prefix, "ipv4");
 }
 
-function isIpv6InCidr(ip: string, cidr: string): boolean {
-	if (cidr === '::1/128' && (ip === '::1' || ip === '0:0:0:0:0:0:0:1')) return true
-	const prefix = cidr.split('/')[0] ?? ''
-	if (prefix === 'fc00::' && ip.toLowerCase().startsWith('fc')) return true
-	if (prefix === 'fc00::' && ip.toLowerCase().startsWith('fd')) return true
-	if (prefix === 'fe80::' && ip.toLowerCase().startsWith('fe8')) return true
-	if (prefix === 'fe80::' && ip.toLowerCase().startsWith('fe9')) return true
-	if (prefix === 'fe80::' && ip.toLowerCase().startsWith('fea')) return true
-	if (prefix === 'fe80::' && ip.toLowerCase().startsWith('feb')) return true
-	return false
+for (const [network, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["ff00::", 8],
+  ["2001:db8::", 32],
+] as const) {
+  blockedAddresses.addSubnet(network, prefix, "ipv6");
 }
 
-export function isIpBlocked(ip: string): boolean {
-	const BLOCKED_IPV4 = [
-		'127.0.0.0/8',
-		'10.0.0.0/8',
-		'172.16.0.0/12',
-		'192.168.0.0/16',
-		'169.254.0.0/16',
-		'100.64.0.0/10',
-	]
-
-	const BLOCKED_IPV6 = [
-		'::1/128',
-		'fc00::/7',
-		'fe80::/10',
-	]
-
-	const isV4 = ip.includes('.')
-	if (isV4) {
-		return BLOCKED_IPV4.some((cidr) => isIpInCidr(ip, cidr))
-	} else {
-		return BLOCKED_IPV6.some((cidr) => isIpv6InCidr(ip, cidr))
-	}
+export function isIpBlocked(ip: string, family = net.isIP(ip)): boolean {
+  if (family === 4) return blockedAddresses.check(ip, "ipv4");
+  if (family === 6) {
+    const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)?.[1];
+    return mappedIpv4 === undefined
+      ? blockedAddresses.check(ip, "ipv6")
+      : blockedAddresses.check(mappedIpv4, "ipv4");
+  }
+  return true;
 }
 
-export async function advisorySsrfCheck(url: string): Promise<void> {
-	let parsedUrl: URL
-	try {
-		parsedUrl = new URL(url)
-	} catch {
-		throw new SsrfBlockedError('Target URL is invalid.')
-	}
+/**
+ * Validate a target at write time. Delivery performs the same validation while
+ * pinning the selected address, because this advisory check alone cannot stop
+ * DNS rebinding.
+ */
+export type HostResolver = (hostname: string) => Promise<readonly LookupAddress[]>;
 
-	if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-		throw new SsrfBlockedError('Target URL must use http or https.')
-	}
+const systemResolver: HostResolver = (hostname) => dns.lookup(hostname, { all: true });
 
-	const hostname = parsedUrl.hostname
-	const ips: string[] = []
+export async function advisorySsrfCheck(
+  rawUrl: string,
+  resolveHostname: HostResolver = systemResolver,
+): Promise<void> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new SsrfBlockedError("URL is invalid.");
+  }
 
-	try {
-		const v4 = await dns.promises.resolve4(hostname)
-		ips.push(...v4)
-	} catch {
-		// Ignore ENOTFOUND
-	}
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new SsrfBlockedError("Protocol not allowed; use HTTP or HTTPS.");
+  }
+  if (url.username.length > 0 || url.password.length > 0) {
+    throw new SsrfBlockedError("Embedded credentials are not allowed.");
+  }
 
-	try {
-		const v6 = await dns.promises.resolve6(hostname)
-		ips.push(...v6)
-	} catch {
-		// Ignore ENOTFOUND
-	}
+  const literalFamily = net.isIP(url.hostname);
+  if (literalFamily !== 0) {
+    if (isIpBlocked(url.hostname, literalFamily)) {
+      throw new SsrfBlockedError("Address is in a blocked network range.");
+    }
+    return;
+  }
 
-	for (const ip of ips) {
-		if (isIpBlocked(ip)) {
-			throw new SsrfBlockedError(`Target URL resolves to a blocked address (${ip}).`)
-		}
-	}
+  let addresses: readonly LookupAddress[];
+  try {
+    addresses = await resolveHostname(url.hostname);
+  } catch {
+    throw new SsrfBlockedError("Hostname could not be resolved.");
+  }
+  if (addresses.length === 0) {
+    throw new SsrfBlockedError("Hostname could not be resolved.");
+  }
+  if (addresses.some(({ address, family }) => isIpBlocked(address, family))) {
+    throw new SsrfBlockedError("Hostname resolves to a blocked network range.");
+  }
 }

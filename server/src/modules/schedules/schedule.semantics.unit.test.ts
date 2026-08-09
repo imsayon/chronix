@@ -1,12 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { DateTime } from "luxon";
+import { describe, it, expect } from "vitest";
 import {
   computeNextOccurrence,
   applyMisfirePolicy,
   deriveIdempotencyKey,
   computeBackoff,
-  ScheduleState
 } from "./schedule.semantics.js";
+import type { ScheduleState } from "./schedule.semantics.js";
 
 describe("Scheduling Semantics", () => {
   describe("computeNextOccurrence", () => {

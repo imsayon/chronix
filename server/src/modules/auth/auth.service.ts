@@ -57,8 +57,14 @@ async function issueTokenPair(
 }
 
 function omitPasswordHash(account: { id: string; email: string; passwordHash: string; displayName: string; isActive: boolean; createdAt: Date; updatedAt: Date }) {
-  const { passwordHash: _ph, ...rest } = account;
-  return rest;
+  return {
+    id: account.id,
+    email: account.email,
+    displayName: account.displayName,
+    isActive: account.isActive,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+  };
 }
 
 // ─── Register ─────────────────────────────────────────────────────────────────

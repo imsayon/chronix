@@ -8,7 +8,8 @@ export async function processExecution(
 	db: PrismaClient,
 	workerId: string,
 	executionId: string,
-	workspaceId: string
+	workspaceId: string,
+	deliver: typeof executeWebhook = executeWebhook,
 ): Promise<void> {
 	// 1. Claim the execution (leases it to this worker for 60 seconds)
 	const execution = await repo.claimExecution(db, executionId, workerId, 60_000)
@@ -37,7 +38,7 @@ export async function processExecution(
 
 		// 3. Perform the actual HTTP webhook call
 		const attemptStartedAt = new Date()
-		const response = await executeWebhook(
+		const response = await deliver(
 			job.targetUrl,
 			job.httpMethod,
 			job.headers,

@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import dns from "node:dns/promises";
 import { isIpBlocked, advisorySsrfCheck, SsrfBlockedError } from "./ssrf-check.js";
-
-vi.mock("node:dns/promises");
 
 describe("SSRF Advisory Check", () => {
   describe("isIpBlocked", () => {
@@ -61,27 +58,28 @@ describe("SSRF Advisory Check", () => {
     });
 
     it("allows a safe URL with mocked DNS", async () => {
-      vi.mocked(dns.lookup).mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
-      await expect(advisorySsrfCheck("https://example.com/webhook")).resolves.toBeUndefined();
-      expect(dns.lookup).toHaveBeenCalledWith("example.com", { all: true });
+      const resolveHostname = vi.fn().mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+      await expect(advisorySsrfCheck("https://example.com/webhook", resolveHostname)).resolves.toBeUndefined();
+      expect(resolveHostname).toHaveBeenCalledWith("example.com");
     });
 
     it("blocks if ANY resolved IP is in a blocked range", async () => {
-      vi.mocked(dns.lookup).mockResolvedValue([
+      const resolveHostname = vi.fn().mockResolvedValue([
         { address: "8.8.8.8", family: 4 },
         { address: "192.168.1.10", family: 4 }
       ]);
-      await expect(advisorySsrfCheck("https://internal.example.com")).rejects.toThrow(/blocked network range/);
+      await expect(advisorySsrfCheck("https://internal.example.com", resolveHostname)).rejects.toThrow(/blocked network range/);
     });
 
     it("blocks IP literal hostnames without DNS resolution", async () => {
-      await expect(advisorySsrfCheck("http://127.0.0.1")).rejects.toThrow(/blocked network range/);
-      expect(dns.lookup).not.toHaveBeenCalled();
+      const resolveHostname = vi.fn();
+      await expect(advisorySsrfCheck("http://127.0.0.1", resolveHostname)).rejects.toThrow(/blocked network range/);
+      expect(resolveHostname).not.toHaveBeenCalled();
     });
 
     it("handles DNS errors gracefully", async () => {
-      vi.mocked(dns.lookup).mockRejectedValue(Object.assign(new Error(), { code: "ENOTFOUND" }));
-      await expect(advisorySsrfCheck("https://does-not-exist.example.com")).rejects.toThrow(/Hostname could not be resolved/);
+      const resolveHostname = vi.fn().mockRejectedValue(Object.assign(new Error(), { code: "ENOTFOUND" }));
+      await expect(advisorySsrfCheck("https://does-not-exist.example.com", resolveHostname)).rejects.toThrow(/Hostname could not be resolved/);
     });
   });
 });

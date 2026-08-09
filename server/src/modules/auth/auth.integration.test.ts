@@ -11,9 +11,13 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import supertest from "supertest";
 import { generateKeyPairSync } from "node:crypto";
-import { execSync } from "node:child_process";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { Redis } from "ioredis";
+import {
+  createTestConfig,
+  startTestDatabase,
+  startTestValkey,
+} from "../../test/integration-environment.js";
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -30,43 +34,32 @@ const API_KEY_HMAC_SECRET = "test-hmac-secret-that-is-at-least-32-characters";
 let db: PrismaClient;
 let redis: Redis;
 let app: ReturnType<typeof supertest>;
+let stopDatabase: () => Promise<void>;
+let stopValkey: () => Promise<void>;
 
 beforeAll(async () => {
-  // Use local postgres instance
-  const databaseUrl = "postgresql://chronix:password@localhost/chronix_test";
-
-  // Set env vars BEFORE any server module is imported
-  process.env["NODE_ENV"] = "test";
-  process.env["DATABASE_URL"] = databaseUrl;
-  process.env["REDIS_URL"] = "redis://localhost:6379";
-  process.env["JWT_PRIVATE_KEY"] = JWT_PRIVATE_KEY;
-  process.env["JWT_PUBLIC_KEY"] = JWT_PUBLIC_KEY;
-  process.env["API_KEY_HMAC_SECRET"] = API_KEY_HMAC_SECRET;
-  process.env["CORS_ORIGIN"] = "http://localhost:3001";
-
-  // Run migrations
-  execSync("pnpm prisma migrate deploy", {
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-    cwd: process.cwd(),
+  const [databaseEnvironment, valkeyEnvironment] = await Promise.all([
+    startTestDatabase(),
+    startTestValkey(),
+  ]);
+  db = databaseEnvironment.database;
+  stopDatabase = databaseEnvironment.stop;
+  stopValkey = valkeyEnvironment.stop;
+  const config = createTestConfig({
+    DATABASE_URL: databaseEnvironment.databaseUrl,
+    REDIS_URL: valkeyEnvironment.redisUrl,
+    JWT_PRIVATE_KEY,
+    JWT_PUBLIC_KEY,
+    API_KEY_HMAC_SECRET,
   });
 
-  // Dynamic imports AFTER env is set — prevents config eager-load at import time
-  const { config } = await import("../../common/config/index.js");
-  const { createDatabaseClient } = await import("../../infra/database/client.js");
   const { createHttpServer } = await import("../../infra/http/server.js");
   const { createRedisConnection } = await import("../../infra/queue/client.js");
 
-  db = createDatabaseClient(config);
+  redis = createRedisConnection(config);
+  await redis.ping();
 
-  // Redis connection (graceful — auth tests don't require Redis for core logic)
-  try {
-    redis = createRedisConnection(config);
-    await redis.ping();
-  } catch {
-    // Redis not available in CI — rate limiter fails open, tests still pass
-  }
-
-  const httpApp = createHttpServer(db, redis!);
+  const httpApp = createHttpServer(db, redis, config);
   app = supertest(httpApp);
 }, 60_000);
 
@@ -84,6 +77,7 @@ afterAll(async () => {
   await db?.$executeRawUnsafe(`TRUNCATE TABLE workspaces, workspace_memberships, api_keys, accounts CASCADE;`);
   await db?.$disconnect();
   await redis?.quit();
+  await Promise.all([stopDatabase?.(), stopValkey?.()]);
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

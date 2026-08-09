@@ -4,7 +4,7 @@ import express from "express"
 import helmet from "helmet"
 import { pinoHttp } from "pino-http"
 import type { PrismaClient } from "../../generated/prisma/client.js"
-import { config } from "../../common/config/index.js"
+import type { Config } from "../../common/config/index.js"
 import {
 	globalErrorHandler,
 	notFoundHandler,
@@ -25,6 +25,7 @@ import { createWorkersRouter } from "../../modules/workers/index.js"
 export function createHttpServer(
 	database: PrismaClient,
 	redis: Redis,
+	config: Config,
 ): express.Express {
 	const app = express()
 	app.disable("x-powered-by")

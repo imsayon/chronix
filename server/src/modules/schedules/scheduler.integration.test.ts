@@ -1,126 +1,114 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { PrismaClient } from "../../generated/prisma/client.js";
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { PrismaClient } from "../../generated/prisma/client.js";
+import { createTestConfig, startTestDatabase } from "../../test/integration-environment.js";
 import { processDueSchedules } from "./scheduler.service.js";
-import * as outboxRepo from "../executions/outbox.repository.js";
-import * as scheduleRepo from "./schedules.repository.js";
-import { v4 as uuidv4 } from "uuid";
 
-// We use an in-memory testing strategy or a dedicated test DB depending on the setup.
-// Assuming we have a real PrismaClient pointing to a test database or similar.
-const db = new PrismaClient();
+let database: PrismaClient;
+let stopDatabase: () => Promise<void>;
 
-describe("Scheduler Integration", () => {
-  beforeEach(async () => {
-    // Clear outbox, executions, schedules, jobs, workspaces for clean slate
-    await db.outbox.deleteMany();
-    await db.execution.deleteMany();
-    await db.schedule.deleteMany();
-    await db.job.deleteMany();
-    await db.workspace.deleteMany();
+const schedulerConfig = createTestConfig({
+  DATABASE_URL: "postgresql://unused",
+  REDIS_URL: "redis://unused",
+  JWT_PRIVATE_KEY: "unused",
+  JWT_PUBLIC_KEY: "unused",
+});
+
+beforeAll(async () => {
+  const environment = await startTestDatabase();
+  database = environment.database;
+  stopDatabase = environment.stop;
+});
+
+beforeEach(async () => {
+  await database.executionOutbox.deleteMany();
+  await database.execution.deleteMany();
+  await database.schedule.deleteMany();
+  await database.job.deleteMany();
+  await database.workspace.deleteMany();
+});
+
+afterAll(async () => stopDatabase?.());
+
+async function insertWorkspaceAndJob(suffix: string) {
+  const workspace = await database.workspace.create({
+    data: { id: randomUUID(), name: `Test ${suffix}`, slug: `test-${suffix}` },
   });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
+  const job = await database.job.create({
+    data: {
+      id: randomUUID(),
+      workspaceId: workspace.id,
+      name: `Job ${suffix}`,
+      targetUrl: "https://example.com/webhook",
+      httpMethod: "POST",
+      isEnabled: true,
+    },
   });
+  return { workspace, job };
+}
 
-  it("processes a due cron schedule and advances nextRunAt", async () => {
-    const workspaceId = uuidv4();
-    await db.workspace.create({ data: { id: workspaceId, name: "Test WS", slug: "test-ws" } });
-
-    const jobId = uuidv4();
-    await db.job.create({
+describe("scheduler integration", () => {
+  it("atomically creates an execution and outbox record, then advances a cron schedule", async () => {
+    const { workspace, job } = await insertWorkspaceAndJob("cron");
+    const now = new Date("2026-07-30T10:00:00.000Z");
+    const schedule = await database.schedule.create({
       data: {
-        id: jobId,
-        workspaceId,
-        name: "Test Job",
-        targetUrl: "https://test.com",
-        httpMethod: "POST",
-        enabled: true
-      }
-    });
-
-    const now = new Date("2026-07-30T10:00:00Z");
-    const nextRunAt = new Date("2026-07-30T10:00:00Z");
-
-    const schedule = await db.schedule.create({
-      data: {
-        workspaceId,
-        jobId,
-        name: "Test Cron",
+        workspaceId: workspace.id,
+        jobId: job.id,
+        name: "Daily cron",
         scheduleType: "cron",
-        cronExpression: "0 10 * * *", // 10 AM every day
+        cronExpression: "0 10 * * *",
         timezone: "UTC",
         misfirePolicy: "coalesce",
         status: "active",
-        nextRunAt,
+        nextRunAt: now,
         maxRetries: 3,
-        retryBackoffBaseMs: 1000
-      }
+        retryBackoffBaseMs: 1_000,
+      },
     });
 
-    const config = { SCHEDULER_TICK_MS: 1000 } as any;
+    await expect(
+      processDueSchedules(database, schedulerConfig, "scheduler-test", now),
+    ).resolves.toBe(1);
 
-    const claimed = await processDueSchedules(db, config, "test-scheduler", now);
-
-    expect(claimed).toBe(1);
-
-    // Verify schedule advanced
-    const updatedSchedule = await db.schedule.findUnique({ where: { id: schedule.id } });
-    expect(updatedSchedule?.nextRunAt?.toISOString()).toBe("2026-07-31T10:00:00.000Z");
-
-    // Verify execution created
-    const executions = await db.execution.findMany({ where: { scheduleId: schedule.id } });
-    expect(executions.length).toBe(1);
-    expect(executions[0].status).toBe("pending");
-    expect(executions[0].nominalRunAt.toISOString()).toBe("2026-07-30T10:00:00.000Z");
-
-    // Verify outbox created
-    const outbox = await db.outbox.findMany();
-    expect(outbox.length).toBe(1);
-    expect(outbox[0].executionId).toBe(executions[0].id);
+    const [updatedSchedule, executions, outbox] = await Promise.all([
+      database.schedule.findUniqueOrThrow({ where: { id: schedule.id } }),
+      database.execution.findMany({ where: { scheduleId: schedule.id } }),
+      database.executionOutbox.findMany(),
+    ]);
+    expect(updatedSchedule.nextRunAt?.toISOString()).toBe("2026-07-31T10:00:00.000Z");
+    expect(executions).toHaveLength(1);
+    expect(executions[0]?.status).toBe("pending");
+    expect(executions[0]?.nominalRunAt.toISOString()).toBe(now.toISOString());
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]?.executionId).toBe(executions[0]?.id);
   });
 
-  it("processes a due one_time schedule and completes it", async () => {
-    const workspaceId = uuidv4();
-    await db.workspace.create({ data: { id: workspaceId, name: "Test WS 2", slug: "test-ws-2" } });
-
-    const jobId = uuidv4();
-    await db.job.create({
+  it("marks a claimed one-time schedule complete", async () => {
+    const { workspace, job } = await insertWorkspaceAndJob("one-time");
+    const runAt = new Date("2026-07-30T10:00:00.000Z");
+    const schedule = await database.schedule.create({
       data: {
-        id: jobId,
-        workspaceId,
-        name: "Test Job",
-        targetUrl: "https://test.com",
-        httpMethod: "POST",
-        enabled: true
-      }
-    });
-
-    const runAt = new Date("2026-07-30T10:00:00Z");
-
-    const schedule = await db.schedule.create({
-      data: {
-        workspaceId,
-        jobId,
-        name: "Test One Time",
+        workspaceId: workspace.id,
+        jobId: job.id,
+        name: "One time",
         scheduleType: "one_time",
+        timezone: "UTC",
         misfirePolicy: "coalesce",
         status: "active",
         runAt,
         nextRunAt: runAt,
         maxRetries: 3,
-        retryBackoffBaseMs: 1000
-      }
+        retryBackoffBaseMs: 1_000,
+      },
     });
 
-    const config = { SCHEDULER_TICK_MS: 1000 } as any;
+    await expect(
+      processDueSchedules(database, schedulerConfig, "scheduler-test", runAt),
+    ).resolves.toBe(1);
 
-    const claimed = await processDueSchedules(db, config, "test-scheduler", runAt);
-
-    expect(claimed).toBe(1);
-
-    const updatedSchedule = await db.schedule.findUnique({ where: { id: schedule.id } });
-    expect(updatedSchedule?.status).toBe("completed");
-    expect(updatedSchedule?.nextRunAt).toBeNull();
+    const updated = await database.schedule.findUniqueOrThrow({ where: { id: schedule.id } });
+    expect(updated.status).toBe("completed");
+    expect(updated.nextRunAt).toBeNull();
   });
 });
