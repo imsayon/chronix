@@ -2,7 +2,7 @@
 
 Chronix is a self-hostable distributed scheduler for durable outbound HTTP webhooks. PostgreSQL owns schedule and execution state, a transactional outbox bridges committed work to BullMQ on Valkey, and fenced database leases prevent stale workers from overwriting newer outcomes.
 
-> Current release state: Phases 0–3 are implemented, tested, and merged. Phase 4 operations and hosted deployment remain subject to the final CI, browser, staging, and provider-credential gates.
+> Current release state: Phases 0–4 are implemented, tested, and merged. Hosted deployment and staging acceptance require provider credentials and are intentionally tracked outside the repository.
 
 ## Architecture
 
