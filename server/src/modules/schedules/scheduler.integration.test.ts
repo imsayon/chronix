@@ -111,4 +111,32 @@ describe("scheduler integration", () => {
     expect(updated.status).toBe("completed");
     expect(updated.nextRunAt).toBeNull();
   });
+
+  it("allows only one scheduler to claim a due schedule concurrently", async () => {
+    const { workspace, job } = await insertWorkspaceAndJob("race");
+    const now = new Date("2026-07-30T10:00:00.000Z");
+    await database.schedule.create({
+      data: {
+        workspaceId: workspace.id,
+        jobId: job.id,
+        name: "Concurrent cron",
+        scheduleType: "cron",
+        cronExpression: "0 10 * * *",
+        timezone: "UTC",
+        nextRunAt: now,
+        status: "active",
+        maxRetries: 3,
+        retryBackoffBaseMs: 1_000,
+      },
+    });
+
+    const results = await Promise.all([
+      processDueSchedules(database, schedulerConfig, "scheduler-a", now),
+      processDueSchedules(database, schedulerConfig, "scheduler-b", now),
+    ]);
+
+    expect(results[0]! + results[1]!).toBe(1);
+    expect(await database.execution.count()).toBe(1);
+    expect(await database.executionOutbox.count()).toBe(1);
+  });
 });

@@ -187,7 +187,7 @@ export async function softDeleteSchedule(
 }
 
 export async function findDueSchedules(
-	db: PrismaClient,
+	db: DbClient,
 	opts: { now: Date; batchSize: number }
 ): Promise<ScheduleClaimCandidate[]> {
 	const rows = await db.$queryRaw<
