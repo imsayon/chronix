@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTriggerSchedule } from '@/lib/api/schedules';
+import { errorMessage } from '@/lib/api/client';
 
 interface Props {
   workspaceId: string;
@@ -22,8 +23,8 @@ export function TriggerButton({ workspaceId, scheduleId, disabled }: Props) {
       if (res.executionId) {
         router.push(`/workspaces/${workspaceId}/executions/${res.executionId}`);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to trigger schedule');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to trigger schedule'));
     }
   };
 

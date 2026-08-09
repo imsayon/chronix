@@ -7,23 +7,23 @@ export interface Schedule {
   workspaceId: string;
   jobId: string;
   name: string;
-  description?: string;
+  description: string | null;
   scheduleType: 'cron' | 'one_time';
-  cronExpression?: string;
-  timezone?: string;
-  runAt?: string;
+  cronExpression: string | null;
+  timezone: string;
+  runAt: string | null;
   misfirePolicy: string;
   maxRetries: number;
   retryBackoffBaseMs: number;
   status: 'active' | 'paused' | 'completed' | 'error';
-  nextRunAt?: string;
+  nextRunAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-const getHeaders = () => {
+const getHeaders = (): Record<string, string> => {
   const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : undefined;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 export function useSchedules(workspaceId: string) {

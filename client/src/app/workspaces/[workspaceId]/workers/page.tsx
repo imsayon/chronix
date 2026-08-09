@@ -1,65 +1,69 @@
-"use client"
+'use client';
 
-import { use, useEffect, useState } from "react"
-import { WorkerHeartbeatCard } from "../../../../components/WorkerHeartbeatCard"
+import { use, useEffect, useState } from 'react';
+import { WorkerHeartbeatCard } from '@/components/WorkerHeartbeatCard';
+import type { WorkerRegistration } from '@/components/WorkerHeartbeatCard';
+import { apiFetch } from '@/lib/api/client';
+import { getAccessToken } from '@/lib/auth';
 
 export default function WorkersPage({
-	params,
+  params,
 }: {
-	params: Promise<{ workspaceId: string }>
+  params: Promise<{ workspaceId: string }>;
 }) {
-	const { workspaceId } = use(params)
-	const [workers, setWorkers] = useState<any[]>([])
-	const [loading, setLoading] = useState(true)
+  const { workspaceId } = use(params);
+  const [workers, setWorkers] = useState<WorkerRegistration[]>([]);
+  const [observedAt, setObservedAt] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
-	useEffect(() => {
-		let isMounted = true
+  useEffect(() => {
+    let active = true;
+    const fetchWorkers = async () => {
+      try {
+        const token = getAccessToken();
+        const response = await apiFetch<WorkerRegistration[]>(
+          `/api/v1/workspaces/${workspaceId}/workers`,
+          { headers: token === null ? {} : { Authorization: `Bearer ${token}` } },
+        );
+        if (active) {
+          setWorkers(response.data);
+          setObservedAt(new Date().getTime());
+          setFailed(false);
+        }
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
 
-		const fetchWorkers = async () => {
-			try {
-				const res = await fetch(`http://localhost:3000/api/v1/workspaces/${workspaceId}/workers`)
-				if (res.ok) {
-					const data = await res.json()
-					if (isMounted) {
-						setWorkers(data.data)
-					}
-				}
-			} catch (error) {
-				console.error("Failed to fetch workers:", error)
-			} finally {
-				if (isMounted) setLoading(false)
-			}
-		}
+    void fetchWorkers();
+    const interval = window.setInterval(() => void fetchWorkers(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [workspaceId]);
 
-		fetchWorkers()
-		const interval = setInterval(fetchWorkers, 5000)
-
-		return () => {
-			isMounted = false
-			clearInterval(interval)
-		}
-	}, [workspaceId])
-
-	return (
-		<div className="p-8 max-w-6xl mx-auto">
-			<div className="mb-8 border-b pb-4">
-				<h1 className="text-2xl font-bold mb-2">Fleet Status</h1>
-				<p className="text-sm text-gray-500">Live dashboard of Chronix execution workers processing webhook deliveries.</p>
-			</div>
-
-			{loading && workers.length === 0 ? (
-				<div>Loading workers...</div>
-			) : workers.length === 0 ? (
-				<div className="text-gray-500 italic p-8 border rounded-lg bg-gray-50 text-center">
-					No active workers found. Is the execution engine running?
-				</div>
-			) : (
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-					{workers.map(worker => (
-						<WorkerHeartbeatCard key={worker.workerId} worker={worker} />
-					))}
-				</div>
-			)}
-		</div>
-	)
+  return (
+    <div className="detail-page">
+      <header className="detail-heading">
+        <div><p className="eyebrow">Runtime</p><h1>Worker fleet</h1><p className="muted-copy">Executor registrations and recent heartbeats.</p></div>
+      </header>
+      {loading ? (
+        <div className="empty-state">Loading workers…</div>
+      ) : failed ? (
+        <div className="empty-state"><h3>Worker status unavailable</h3><p>The API could not return fleet health.</p></div>
+      ) : workers.length === 0 ? (
+        <div className="empty-state"><h3>No active workers</h3><p>Start an executor to process webhook deliveries.</p></div>
+      ) : (
+        <div className="worker-grid">
+          {workers.map((worker) => (
+            <WorkerHeartbeatCard key={worker.workerId} worker={worker} observedAt={observedAt} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

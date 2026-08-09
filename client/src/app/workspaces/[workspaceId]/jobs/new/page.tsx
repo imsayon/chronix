@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCreateJob } from '@/lib/api/jobs';
 import Link from 'next/link';
+import { errorMessage } from '@/lib/api/client';
 
-export default function NewJobPage({ params }: { params: { workspaceId: string } }) {
-  const { workspaceId } = params;
+export default function NewJobPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = use(params);
   const router = useRouter();
   const createJob = useCreateJob(workspaceId);
 
@@ -28,8 +29,8 @@ export default function NewJobPage({ params }: { params: { workspaceId: string }
         httpMethod,
       });
       router.push(`/workspaces/${workspaceId}/jobs`);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create job');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to create job'));
     }
   };
 

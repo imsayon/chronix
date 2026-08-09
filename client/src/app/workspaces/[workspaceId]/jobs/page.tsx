@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useJobs } from '@/lib/api/jobs';
 import { formatDistanceToNow } from 'date-fns';
+import { use } from 'react';
 
-export default function JobsPage({ params }: { params: { workspaceId: string } }) {
-  const { workspaceId } = params;
+export default function JobsPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = use(params);
   const { data: jobs, isLoading, error } = useJobs(workspaceId);
 
   return (
@@ -45,9 +46,9 @@ export default function JobsPage({ params }: { params: { workspaceId: string } }
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 12, color: 'var(--ink-muted)' }}>Created {formatDistanceToNow(new Date(job.createdAt))} ago</div>
                   <div style={{ marginTop: 8 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: job.enabled ? 'green' : 'gray' }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: job.enabled ? 'green' : 'gray' }} />
-                      {job.enabled ? 'Enabled' : 'Disabled'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, color: job.isEnabled ? 'green' : 'gray' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: job.isEnabled ? 'green' : 'gray' }} />
+                      {job.isEnabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </div>
                 </div>

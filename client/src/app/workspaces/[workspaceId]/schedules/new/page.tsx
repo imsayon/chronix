@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCreateSchedule } from '@/lib/api/schedules';
 import { useJobs } from '@/lib/api/jobs';
 import Link from 'next/link';
+import { errorMessage } from '@/lib/api/client';
 
-export default function NewSchedulePage({ params }: { params: { workspaceId: string } }) {
-  const { workspaceId } = params;
+export default function NewSchedulePage({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = use(params);
   const router = useRouter();
   const createSchedule = useCreateSchedule(workspaceId);
   const { data: jobs, isLoading: jobsLoading } = useJobs(workspaceId);
@@ -39,8 +40,8 @@ export default function NewSchedulePage({ params }: { params: { workspaceId: str
         ...(scheduleType === 'cron' ? { cronExpression, timezone } : { runAt: new Date(runAt).toISOString() })
       });
       router.push(`/workspaces/${workspaceId}/schedules`);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create schedule');
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Failed to create schedule'));
     }
   };
 

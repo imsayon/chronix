@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { use, useState } from 'react';
 import { useSchedule, usePauseSchedule, useResumeSchedule, useDeleteSchedule } from '@/lib/api/schedules';
 import { useExecutions } from '@/lib/api/executions';
 import { useRouter } from 'next/navigation';
@@ -10,8 +10,8 @@ import { ScheduleStatusBadge } from '@/components/domain/ScheduleStatusBadge';
 import { CronHumanReadable } from '@/components/domain/CronHumanReadable';
 import { TriggerButton } from '@/components/domain/TriggerButton';
 
-export default function ScheduleDetailPage({ params }: { params: { workspaceId: string, scheduleId: string } }) {
-  const { workspaceId, scheduleId } = params;
+export default function ScheduleDetailPage({ params }: { params: Promise<{ workspaceId: string, scheduleId: string }> }) {
+  const { workspaceId, scheduleId } = use(params);
   const router = useRouter();
 
   const { data: schedule, isLoading, error } = useSchedule(workspaceId, scheduleId);
@@ -149,7 +149,7 @@ export default function ScheduleDetailPage({ params }: { params: { workspaceId: 
                 {executions.map(exec => (
                   <tr key={exec.id} style={{ borderBottom: '1px solid var(--line)', background: '#fff' }}>
                     <td style={{ padding: '12px 16px' }}>
-                      <ScheduleStatusBadge status={exec.status as any} />
+                      <ScheduleStatusBadge status={exec.status} />
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 14, textTransform: 'capitalize' }}>
                       {exec.triggerType}

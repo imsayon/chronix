@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
-export default function WorkspaceIndex({ params }: { params: { workspaceId: string } }) {
-  redirect(`/workspaces/${params.workspaceId}/jobs`);
+export default async function WorkspaceIndex({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = await params;
+  redirect(`/workspaces/${workspaceId}/jobs`);
 }

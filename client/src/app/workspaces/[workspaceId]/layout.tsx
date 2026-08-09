@@ -2,17 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/features/auth/auth-context';
+import { use } from 'react';
 
 export default function WorkspaceLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
-  params: { workspaceId: string };
+  params: Promise<{ workspaceId: string }>;
 }) {
   const pathname = usePathname();
-  const { workspaceId } = params;
+  const { workspaceId } = use(params);
 
   return (
     <div className="workspace-layout">

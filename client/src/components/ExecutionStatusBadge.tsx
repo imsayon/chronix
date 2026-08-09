@@ -1,21 +1,19 @@
-import React from 'react'
-import { Badge } from './ui/badge'
+import type { ExecutionStatus } from '@/lib/api/executions';
 
-export function ExecutionStatusBadge({ status }: { status: string }) {
-	const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-		pending: 'secondary',
-		claimed: 'secondary',
-		running: 'default',
-		succeeded: 'default', // Actually, should be success colored
-		failed: 'destructive',
-		dead_lettered: 'destructive'
-	}
+const statusClass: Record<ExecutionStatus, string> = {
+  pending: 'status status--paused',
+  claimed: 'status status--paused',
+  running: 'status status--healthy',
+  succeeded: 'status status--healthy',
+  failed: 'status status--attention',
+  dead_lettered: 'status status--attention',
+};
 
-	const variant = variants[status] || 'outline'
-
-	return (
-		<Badge variant={variant} className={status === 'succeeded' ? 'bg-green-600 hover:bg-green-700' : ''}>
-			{status.replace('_', ' ').toUpperCase()}
-		</Badge>
-	)
+export function ExecutionStatusBadge({ status }: { status: ExecutionStatus }) {
+  return (
+    <span className={statusClass[status]}>
+      <span className="status-dot" aria-hidden="true" />
+      {status.replace('_', ' ')}
+    </span>
+  );
 }

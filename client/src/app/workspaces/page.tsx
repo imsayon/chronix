@@ -6,7 +6,6 @@ import { useAuth } from '@/features/auth/auth-context';
 import { WorkspaceCard, type Workspace } from '@/features/workspaces/workspace-card';
 import { apiFetch } from '@/lib/api/client';
 import { getAccessToken } from '@/lib/auth';
-import Link from 'next/link';
 
 export default function WorkspacesPage() {
   const { isAuthenticated, isLoading, account, logout } = useAuth();

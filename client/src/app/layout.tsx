@@ -1,21 +1,28 @@
 import type { Metadata } from 'next';
-import { Instrument_Sans } from 'next/font/google';
+import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 import { Providers } from '@/components/providers';
 import './globals.css';
 
-const instrumentSans = Instrument_Sans({
+const ibmPlexSans = IBM_Plex_Sans({
   subsets: ['latin'],
-  variable: '--font-instrument-sans',
+  variable: '--font-ibm-plex-sans',
+  weight: ['400', '500', '600'],
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  variable: '--font-ibm-plex-mono',
+  weight: ['400', '500'],
 });
 
 export const metadata: Metadata = {
   title: 'Chronix',
-  description: 'Distributed cron scheduling platform',
+  description: 'Durable distributed scheduling for outbound webhooks.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={instrumentSans.variable}>
+    <html lang="en" className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}>
       <body><Providers>{children}</Providers></body>
     </html>
   );

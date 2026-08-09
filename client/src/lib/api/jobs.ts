@@ -6,20 +6,20 @@ export interface Job {
   id: string;
   workspaceId: string;
   name: string;
-  description?: string;
+  description: string | null;
   targetUrl: string;
   httpMethod: string;
   headers: Record<string, string>;
-  bodyTemplate?: string;
+  bodyTemplate: string | null;
   timeoutMs: number;
-  enabled: boolean;
+  isEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-const getHeaders = () => {
+const getHeaders = (): Record<string, string> => {
   const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : undefined;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
 export function useJobs(workspaceId: string) {

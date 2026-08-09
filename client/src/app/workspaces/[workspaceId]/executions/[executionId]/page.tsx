@@ -1,83 +1,50 @@
-"use client"
+'use client';
 
-import { use, useEffect, useState } from "react"
-import { ExecutionStatusBadge } from "../../../../components/ExecutionStatusBadge"
-import { ExecutionAttemptTimeline } from "../../../../components/ExecutionAttemptTimeline"
+import { use } from 'react';
+import { ExecutionAttemptTimeline } from '@/components/ExecutionAttemptTimeline';
+import { ExecutionStatusBadge } from '@/components/ExecutionStatusBadge';
+import { useExecution } from '@/lib/api/executions';
 
 export default function ExecutionPage({
-	params,
+  params,
 }: {
-	params: Promise<{ workspaceId: string; executionId: string }>
+  params: Promise<{ workspaceId: string; executionId: string }>;
 }) {
-	const { workspaceId, executionId } = use(params)
-	const [execution, setExecution] = useState<any>(null)
-	const [loading, setLoading] = useState(true)
+  const { workspaceId, executionId } = use(params);
+  const { data: execution, isLoading, error } = useExecution(workspaceId, executionId);
 
-	useEffect(() => {
-		let isMounted = true
+  if (isLoading) return <div className="empty-state">Loading execution details…</div>;
+  if (error !== null || execution === undefined) {
+    return <div className="empty-state"><h3>Execution unavailable</h3><p>Check the identifier or try again.</p></div>;
+  }
 
-		const fetchExecution = async () => {
-			try {
-				const res = await fetch(`http://localhost:3000/api/v1/workspaces/${workspaceId}/executions/${executionId}`)
-				if (res.ok) {
-					const data = await res.json()
-					if (isMounted) {
-						setExecution(data.data)
-					}
-				}
-			} catch (error) {
-				console.error("Failed to fetch execution:", error)
-			} finally {
-				if (isMounted) setLoading(false)
-			}
-		}
+  return (
+    <div className="detail-page">
+      <header className="detail-heading">
+        <div>
+          <p className="eyebrow">Execution</p>
+          <h1>{execution.id}</h1>
+        </div>
+        <ExecutionStatusBadge status={execution.status} />
+      </header>
 
-		fetchExecution()
-		const interval = setInterval(fetchExecution, 2000)
+      <section className="fact-grid" aria-label="Execution metadata">
+        <dl>
+          <div><dt>Job</dt><dd className="mono">{execution.jobId}</dd></div>
+          <div><dt>Trigger</dt><dd>{execution.triggerType}</dd></div>
+          <div><dt>Nominal run</dt><dd>{new Date(execution.nominalRunAt).toLocaleString()}</dd></div>
+        </dl>
+        <dl>
+          <div><dt>Attempts</dt><dd>{execution.attemptCount} / {execution.maxRetries + 1}</dd></div>
+          <div><dt>Next retry</dt><dd>{execution.nextRetryAt === null ? '—' : new Date(execution.nextRetryAt).toLocaleString()}</dd></div>
+          <div><dt>Terminal</dt><dd>{execution.terminalAt === null ? '—' : new Date(execution.terminalAt).toLocaleString()}</dd></div>
+        </dl>
+      </section>
 
-		return () => {
-			isMounted = false
-			clearInterval(interval)
-		}
-	}, [workspaceId, executionId])
-
-	if (loading) return <div className="p-8">Loading execution details...</div>
-	if (!execution) return <div className="p-8 text-red-500">Execution not found.</div>
-
-	return (
-		<div className="p-8 max-w-4xl mx-auto">
-			<div className="flex justify-between items-start mb-8 border-b pb-4">
-				<div>
-					<h1 className="text-2xl font-bold mb-2">Execution Details</h1>
-					<p className="text-sm text-gray-500 font-mono">{execution.id}</p>
-				</div>
-				<ExecutionStatusBadge status={execution.status} />
-			</div>
-
-			<div className="grid grid-cols-2 gap-8 mb-8">
-				<div>
-					<h3 className="font-semibold mb-2 text-gray-700">Metadata</h3>
-					<ul className="text-sm space-y-2">
-						<li><strong>Job ID:</strong> <span className="font-mono">{execution.jobId}</span></li>
-						<li><strong>Trigger Type:</strong> {execution.triggerType}</li>
-						<li><strong>Nominal Run At:</strong> {new Date(execution.nominalRunAt).toLocaleString()}</li>
-						<li><strong>Attempts:</strong> {execution.attemptCount} / {execution.maxRetries + 1}</li>
-					</ul>
-				</div>
-				<div>
-					<h3 className="font-semibold mb-2 text-gray-700">Lifecycle</h3>
-					<ul className="text-sm space-y-2">
-						<li><strong>Created At:</strong> {new Date(execution.createdAt).toLocaleString()}</li>
-						<li><strong>Next Retry:</strong> {execution.nextRetryAt ? new Date(execution.nextRetryAt).toLocaleString() : 'N/A'}</li>
-						<li><strong>Terminal At:</strong> {execution.terminalAt ? new Date(execution.terminalAt).toLocaleString() : 'N/A'}</li>
-					</ul>
-				</div>
-			</div>
-
-			<div>
-				<h2 className="text-xl font-bold mb-4">Delivery Timeline</h2>
-				<ExecutionAttemptTimeline attempts={execution.attempts} />
-			</div>
-		</div>
-	)
+      <section className="detail-section">
+        <h2>Delivery timeline</h2>
+        <ExecutionAttemptTimeline attempts={execution.attempts} />
+      </section>
+    </div>
+  );
 }

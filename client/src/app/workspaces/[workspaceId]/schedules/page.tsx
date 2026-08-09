@@ -5,9 +5,10 @@ import { useSchedules } from '@/lib/api/schedules';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ScheduleStatusBadge } from '@/components/domain/ScheduleStatusBadge';
 import { CronHumanReadable } from '@/components/domain/CronHumanReadable';
+import { use } from 'react';
 
-export default function SchedulesPage({ params }: { params: { workspaceId: string } }) {
-  const { workspaceId } = params;
+export default function SchedulesPage({ params }: { params: Promise<{ workspaceId: string }> }) {
+  const { workspaceId } = use(params);
   const { data: schedules, isLoading, error } = useSchedules(workspaceId);
 
   return (
