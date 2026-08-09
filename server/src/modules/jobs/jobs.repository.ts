@@ -32,9 +32,12 @@ function mapJob(row: {
 	headersNonce: Uint8Array | null
 	bodyTemplateCiphertext: Uint8Array | null
 	bodyTemplateNonce: Uint8Array | null
+	signingSecretCiphertext: Uint8Array | null
+	signingSecretNonce: Uint8Array | null
 }, rawKey?: string): Job {
 	const headers = row.headersCiphertext && row.headersNonce ? decryptHeaders(row.headersCiphertext, row.headersNonce, rawKey) : (row.headers as Record<string, string>) ?? {}
 	const bodyTemplate = row.bodyTemplateCiphertext && row.bodyTemplateNonce ? decryptValue(row.bodyTemplateCiphertext, row.bodyTemplateNonce, rawKey) : row.bodyTemplate
+	const signingSecret = row.signingSecretCiphertext && row.signingSecretNonce ? decryptValue(row.signingSecretCiphertext, row.signingSecretNonce, rawKey) : null
 	return {
 		id: row.id,
 		workspaceId: row.workspaceId,
@@ -44,6 +47,7 @@ function mapJob(row: {
 		httpMethod: row.httpMethod as Job['httpMethod'],
 		headers,
 		bodyTemplate,
+		signingSecret,
 		timeoutMs: row.timeoutMs,
 		isEnabled: row.isEnabled,
 		version: row.version,

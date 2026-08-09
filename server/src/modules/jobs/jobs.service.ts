@@ -12,7 +12,7 @@ import { JobNotFoundError, JobHasActiveSchedulesError } from './jobs.errors.js'
 export type CreatedJob = { job: Job; signingSecret: string }
 
 export function redactJob(job: Job): Job {
-	return { ...job, headers: Object.fromEntries(Object.keys(job.headers).map((name) => [name, '[REDACTED]'])), bodyTemplate: null }
+	return { ...job, headers: Object.fromEntries(Object.keys(job.headers).map((name) => [name, '[REDACTED]'])), bodyTemplate: null, signingSecret: null }
 }
 
 export async function createJob(db: PrismaClient, ctx: RequestContext, workspaceId: string, input: CreateJobInput, encryptionKey: string): Promise<CreatedJob> {

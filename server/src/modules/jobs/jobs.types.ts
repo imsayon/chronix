@@ -7,6 +7,7 @@ export type Job = {
 	httpMethod: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 	headers: Record<string, string>
 	bodyTemplate: string | null
+	signingSecret: string | null
 	timeoutMs: number
 	isEnabled: boolean
 	version: number

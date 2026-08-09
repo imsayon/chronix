@@ -6,6 +6,7 @@ import type { DeliveryClient } from '../../infra/http-client/client.js'
 import { logger } from '../../infra/telemetry.js'
 import { Counter } from 'prom-client'
 import { registry } from '../../infra/telemetry.js'
+import { createHmac } from 'node:crypto'
 
 const defaultDeliver: DeliveryClient['deliver'] = (input) => executeWebhook(
 	input.url,
@@ -55,7 +56,11 @@ export async function processExecution(
 		const response = await deliver({
 			url: job.targetUrl,
 			method: job.httpMethod,
-			headers: job.headers,
+			headers: {
+				...job.headers,
+				'X-Chronix-Idempotency-Key': execution.idempotencyKey,
+				...(job.signingSecret ? { 'X-Chronix-Signature': `sha256=${createHmac('sha256', job.signingSecret).update(job.bodyTemplate ?? '').digest('hex')}` } : {}),
+			},
 			body: job.bodyTemplate,
 			timeoutMs: job.timeoutMs,
 			chronixHeaders: {
@@ -71,6 +76,13 @@ export async function processExecution(
 
 		// 4. Record the attempt in the database
 		const idempotencyKey = `${execution.idempotencyKey}-attempt-${execution.attemptCount + 1}`
+		const requestHeadersSent = {
+			...Object.fromEntries(Object.keys(job.headers).map((name) => [name, '[REDACTED]'])),
+			'X-Chronix-Execution-Id': execution.id,
+			'X-Chronix-Attempt-Number': (execution.attemptCount + 1).toString(),
+			'X-Chronix-Idempotency-Key': execution.idempotencyKey,
+			...(job.signingSecret ? { 'X-Chronix-Signature': '[REDACTED]' } : {}),
+		}
 
 		await repo.insertAttempt(db, {
 			executionId: execution.id,
@@ -85,11 +97,7 @@ export async function processExecution(
 			responseBodySample: response.responseBodySample,
 			errorMessage: response.errorMessage,
 			idempotencyKey,
-			requestHeadersSent: {
-				...job.headers,
-				'X-Chronix-Execution-Id': execution.id,
-				'X-Chronix-Attempt-Number': (execution.attemptCount + 1).toString(),
-			}
+			requestHeadersSent,
 		})
 
 		// 5. Evaluate the outcome
