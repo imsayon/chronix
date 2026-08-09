@@ -1,8 +1,7 @@
-import { request, Agent } from 'undici'
+import { request, Agent, buildConnector } from 'undici'
 import type { Dispatcher } from 'undici'
 import * as dns from 'node:dns/promises'
 import net from 'node:net'
-import tls from 'node:tls'
 import type { AttemptOutcome } from '../../generated/prisma/client.js'
 import { isIpBlocked, SsrfBlockedError } from './ssrf-check.js'
 
@@ -70,7 +69,7 @@ async function resolveSafeAddress(url: URL, resolver: Resolver): Promise<Resolve
 	if (addresses.length === 0 || addresses.some(({ address, family }) => isIpBlocked(address, family))) {
 		throw new SsrfBlockedError('Hostname resolves to a blocked network range.')
 	}
-	const selected = addresses[0]
+	const selected = addresses.find(({ family }) => family === 4) ?? addresses[0]
 	if (!selected) throw new SsrfBlockedError('Hostname could not be resolved.')
 	return selected
 }
@@ -105,20 +104,17 @@ function validateTargetUrl(url: URL): void {
 	if (url.username || url.password) throw new SsrfBlockedError('Embedded credentials are not allowed.')
 }
 
-function pinnedAgent(url: URL, address: ResolvedAddress): Agent {
+function pinnedAgent(url: URL, address: ResolvedAddress, timeoutMs: number): Agent {
 	const hostname = hostnameFor(url)
+	const connect = buildConnector({ timeout: timeoutMs })
 	return new Agent({
 		connect: (options, callback) => {
-			const connectOptions = { host: address.address, port: Number(options.port), family: address.family }
-			if (options.protocol === 'https:') {
-				const socket = tls.connect({ ...connectOptions, servername: hostname })
-				socket.once('error', (error) => callback(error, null))
-				socket.once('secureConnect', () => callback(null, socket))
-				return
-			}
-			const socket = net.connect(connectOptions)
-			socket.once('error', (error) => callback(error, null))
-			socket.once('connect', () => callback(null, socket))
+			connect({
+				...options,
+				hostname: address.address,
+				host: hostname,
+				servername: hostname,
+			}, callback)
 		},
 	})
 }
@@ -170,7 +166,7 @@ export function createDeliveryClient(options: {
 
 				for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
 					const address = await resolveSafeAddress(currentUrl, resolver)
-					const agent = pinnedAgent(currentUrl, address)
+					const agent = pinnedAgent(currentUrl, address, input.timeoutMs)
 					try {
 						const response = await requestFn(currentUrl, {
 							method,
@@ -186,6 +182,7 @@ export function createDeliveryClient(options: {
 							...(body === null ? {} : { body }),
 							bodyTimeout: input.timeoutMs,
 							headersTimeout: input.timeoutMs,
+							signal: AbortSignal.timeout(input.timeoutMs),
 							dispatcher: agent as Dispatcher,
 						})
 

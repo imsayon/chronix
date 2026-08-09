@@ -56,4 +56,17 @@ describe('secure delivery client', () => {
 		expect(response.responseBodySample).toContain('…[truncated]')
 		expect(response.responseBodySample!.length).toBeLessThan(66_000)
 	})
+
+	it('passes an end-to-end deadline to the HTTP request', async () => {
+		const requestFn = vi.fn().mockRejectedValue(new Error('Connection timeout.'))
+		const client = createDeliveryClient({
+			resolve: async () => [{ address: '8.8.8.8', family: 4 }],
+			requestFn: requestFn as unknown as typeof request,
+		})
+
+		const response = await client.deliver({ url: 'https://public.example/webhook', method: 'GET', headers: {}, body: null, timeoutMs: 5_000, chronixHeaders: context })
+		const requestOptions = requestFn.mock.calls[0]![1] as { signal?: AbortSignal }
+		expect(requestOptions.signal).toBeInstanceOf(AbortSignal)
+		expect(response.outcome).toBe('timeout')
+	})
 })

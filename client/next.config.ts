@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const apiUrl = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000';
+const isDevelopment = process.env.NODE_ENV !== 'production';
 const apiOrigin = (() => {
   try {
     const parsed = new URL(apiUrl);
@@ -19,7 +20,7 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "img-src 'self' data:",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
 ].join('; ');
 

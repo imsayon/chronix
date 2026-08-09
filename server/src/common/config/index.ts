@@ -1,6 +1,8 @@
-import "dotenv/config";
+import { config as loadEnvironment } from "dotenv";
 import { configSchema } from "./schema.js";
 import type { Config } from "./schema.js";
+
+loadEnvironment({ path: [".env.local", ".env"], quiet: true });
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Config {
   const result = configSchema.safeParse(environment);

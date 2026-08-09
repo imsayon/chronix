@@ -28,4 +28,8 @@ describe("configSchema", () => {
   it("rejects an invalid pool range", () => {
     expect(configSchema.safeParse({ ...validEnvironment, DB_POOL_MIN: "11", DB_POOL_MAX: "10" }).success).toBe(false);
   });
+
+  it("rejects encryption keys that do not decode to 32 bytes", () => {
+    expect(configSchema.safeParse({ ...validEnvironment, APP_ENCRYPTION_KEY: "a".repeat(64) }).success).toBe(false);
+  });
 });
