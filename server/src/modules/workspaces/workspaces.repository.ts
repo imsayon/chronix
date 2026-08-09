@@ -143,10 +143,12 @@ export async function removeMember(
 		})
 		if (member === null) return "missing"
 		if (member.role === "owner") {
-			const owners = await trx.workspaceMembership.findMany({
-				where: { workspaceId, role: "owner" },
-				select: { id: true },
-			})
+			// Serialize concurrent owner removals by locking the complete owner set.
+			const owners = await trx.$queryRaw<Array<{ id: string }>>`
+				SELECT id FROM workspace_memberships
+				WHERE workspace_id = ${workspaceId}::uuid AND role = 'owner'::"WorkspaceRole"
+				FOR UPDATE
+			`
 			if (owners.length <= 1) return "last_owner"
 		}
 		await trx.workspaceMembership.delete({ where: { workspaceId_accountId: { workspaceId, accountId } } })
