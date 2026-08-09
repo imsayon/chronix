@@ -22,7 +22,7 @@ export async function processDueSchedules(
 	now: Date
 ): Promise<number> {
 	// 1. Find candidates
-	const batchSize = 100
+	const batchSize = Math.min(config.SCHEDULER_BATCH_SIZE, 100)
 	const candidates = await scheduleRepo.findDueSchedules(db, { now, batchSize })
 
 	if (candidates.length === 0) {
@@ -61,14 +61,13 @@ export async function processDueSchedules(
 				newStatus = 'completed'
 			}
 
-			const leaseExpiresAt = new Date(now.getTime() + 5 * 60 * 1000) // 5 mins lease
+			const leaseExpiresAt = new Date(now.getTime() + config.LEASE_DURATION_MS)
+			const occurrences = misfireResult.catchUpOccurrences ?? (misfireResult.nominalRunAt === null ? [] : [misfireResult.nominalRunAt])
 
 			// c. Transactional conditional claim + execution + outbox
 			await db.$transaction(async (trx) => {
-				const txDb = trx as PrismaClient
-
 				const claimed = await scheduleRepo.conditionalClaimSchedule(
-					txDb,
+					trx,
 					candidate.id,
 					candidate.version,
 					misfireResult.nextRunAt,
@@ -82,27 +81,25 @@ export async function processDueSchedules(
 					return
 				}
 
-				// The idempotency key prevents duplicate execution effects if claimed twice
-				const idempotencyKey = deriveIdempotencyKey(candidate.id, misfireResult.nominalRunAt)
-
-				const execution = await executionRepo.insertExecution(txDb, {
-					workspaceId: candidate.workspaceId,
-					scheduleId: candidate.id,
-					jobId: candidate.jobId,
-					triggerType: 'scheduled',
-					nominalRunAt: misfireResult.nominalRunAt,
-					idempotencyKey,
-					maxRetries: candidate.maxRetries,
-					retryBackoffBaseMs: candidate.retryBackoffBaseMs,
-				})
-
-				await outboxRepo.insertOutbox(txDb, {
-					executionId: execution.id,
-					payload: { executionId: execution.id }
-				})
-
-				claimedCount++
-				claimTotal.labels('claimed').inc()
+				for (const nominalRunAt of occurrences) {
+					const idempotencyKey = deriveIdempotencyKey(candidate.id, nominalRunAt)
+					const execution = await executionRepo.insertExecution(trx, {
+						workspaceId: candidate.workspaceId,
+						scheduleId: candidate.id,
+						jobId: candidate.jobId,
+						triggerType: 'scheduled',
+						nominalRunAt,
+						idempotencyKey,
+						maxRetries: candidate.maxRetries,
+						retryBackoffBaseMs: candidate.retryBackoffBaseMs,
+					})
+					await outboxRepo.insertOutbox(trx, {
+						executionId: execution.id,
+						payload: { executionId: execution.id },
+					})
+					claimedCount++
+					claimTotal.labels('claimed').inc()
+				}
 			})
 		} catch (err: unknown) {
 			logger.error({ err, scheduleId: candidate.id }, 'Error processing schedule claim')

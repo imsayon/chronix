@@ -2,7 +2,7 @@ import type { PrismaClient, Prisma, TriggerType, ExecutionStatus } from '../../g
 import type { Execution, ListExecutionsQuery } from './executions.types.js'
 import { encodeCursor, decodeCursor } from '../../common/pagination.js'
 
-type DbClient = PrismaClient | Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+type DbClient = PrismaClient | Prisma.TransactionClient
 
 export async function insertExecution(
 	db: DbClient,
@@ -94,6 +94,20 @@ export async function findExecutionById(
 
 	if (!result) return null
 
+	return {
+		...result,
+		triggerType: result.triggerType as Execution['triggerType'],
+		status: result.status as Execution['status'],
+	}
+}
+
+export async function findExecutionByIdempotencyKey(
+	db: DbClient,
+	workspaceId: string,
+	idempotencyKey: string
+): Promise<Execution | null> {
+	const result = await db.execution.findFirst({ where: { workspaceId, idempotencyKey } })
+	if (!result) return null
 	return {
 		...result,
 		triggerType: result.triggerType as Execution['triggerType'],

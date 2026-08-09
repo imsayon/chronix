@@ -9,6 +9,7 @@ export class LastOwnerError extends AppError { public constructor() { super("LAS
 export class AccountNotFoundError extends AppError { public constructor() { super("ACCOUNT_NOT_FOUND", "The account does not exist.", 404); } }
 export class MemberAlreadyExistsError extends AppError { public constructor() { super("MEMBER_ALREADY_EXISTS", "The account is already a workspace member.", 409); } }
 export class WorkspaceSlugTakenError extends AppError { public constructor() { super("WORKSPACE_SLUG_TAKEN", "That workspace slug is already in use.", 409); } }
+export class VersionConflictError extends AppError { public constructor() { super("VERSION_CONFLICT", "The resource changed; reload and try again.", 409); } }
 export class UnprocessableError extends AppError { public constructor(message = "The request cannot be processed.") { super("UNPROCESSABLE", message, 422); } }
 export class TooManyRequestsError extends AppError { public constructor(message = "Too many requests. Please slow down.") { super("TOO_MANY_REQUESTS", message, 429); } }
 export class ServiceUnavailableError extends AppError { public constructor(message = "The service is temporarily unavailable.") { super("SERVICE_UNAVAILABLE", message, 503); } }

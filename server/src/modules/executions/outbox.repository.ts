@@ -1,6 +1,6 @@
-import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 
-type DbClient = PrismaClient | Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+type DbClient = PrismaClient | Prisma.TransactionClient
 
 export interface OutboxRecord {
 	id: string

@@ -30,7 +30,8 @@ const updateJobSchema = z.object({
 	timeoutMs: z.coerce.number().int().min(1000).max(300000).optional(),
 })
 
-const listJobsSchema = z.object({
+export const listJobsSchema = z.object({
+	cursor: z.string().min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(100).default(20),
 	isEnabled: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
 })
