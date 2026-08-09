@@ -156,6 +156,9 @@ importers:
       '@prisma/client':
         specifier: 7.9.1
         version: 7.9.1(prisma@7.9.1(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.3))(typescript@6.0.3)
+      argon2:
+        specifier: 0.45.1
+        version: 0.45.1
       bullmq:
         specifier: 5.81.3
         version: 5.81.3(supports-color@7.2.0)
@@ -168,6 +171,9 @@ importers:
       cron-parser:
         specifier: 5.7.0
         version: 5.7.0
+      dotenv:
+        specifier: 17.4.2
+        version: 17.4.2
       express:
         specifier: 5.2.1
         version: 5.2.1(supports-color@7.2.0)
@@ -229,12 +235,6 @@ importers:
       '@types/supertest':
         specifier: 7.2.1
         version: 7.2.1
-      argon2:
-        specifier: 0.45.1
-        version: 0.45.1
-      dotenv:
-        specifier: 17.4.2
-        version: 17.4.2
       eslint:
         specifier: 9.39.5
         version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
