@@ -103,19 +103,22 @@ model Account {
 
 /// Refresh-token families for session management and reuse detection.
 model RefreshToken {
-    id        String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
-    accountId String    @map("account_id") @db.Uuid
-    tokenHash String    @unique @map("token_hash")
-    familyId  String    @map("family_id") @db.Uuid
-    revokedAt DateTime? @map("revoked_at") @db.Timestamptz
-    expiresAt DateTime  @map("expires_at") @db.Timestamptz
-    createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-    updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+    id          String    @id @default(dbgenerated("generate_uuidv7()")) @db.Uuid
+    accountId   String    @map("account_id") @db.Uuid
+    workspaceId String?   @map("workspace_id") @db.Uuid
+    tokenHash   String    @unique @map("token_hash")
+    familyId    String    @map("family_id") @db.Uuid
+    revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+    expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+    createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+    updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-    account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
     @@index([accountId])
     @@index([familyId])
+    @@index([workspaceId])
     @@map("refresh_tokens")
 }
 
@@ -129,6 +132,7 @@ model Workspace {
     updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
     memberships       WorkspaceMembership[]
+    refreshTokens      RefreshToken[]
     apiKeys           ApiKey[]
     jobs              Job[]
     schedules         Schedule[]

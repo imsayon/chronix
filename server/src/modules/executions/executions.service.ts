@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { RequestContext } from '../../common/auth.types.js'
-import { requireAuth } from '../../common/auth.guards.js'
+import { requireWorkspaceAccess, requireScope } from '../../common/auth.guards.js'
 import { NotFoundError } from '../../common/errors/http-errors.js'
 import * as repo from './executions.repository.js'
 import type { ListExecutionsQuery } from './executions.types.js'
@@ -11,7 +11,8 @@ export async function listExecutions(
 	workspaceId: string,
 	query: ListExecutionsQuery
 ) {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'executions:read')
 	return repo.findExecutionsByWorkspace(db, workspaceId, query)
 }
 
@@ -22,7 +23,8 @@ export async function listScheduleExecutions(
 	scheduleId: string,
 	query: ListExecutionsQuery
 ) {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'executions:read')
 	return repo.findExecutionsBySchedule(db, scheduleId, workspaceId, query)
 }
 
@@ -32,7 +34,8 @@ export async function getExecution(
 	workspaceId: string,
 	executionId: string
 ) {
-	requireAuth(ctx)
+	requireWorkspaceAccess(ctx, workspaceId)
+	requireScope(ctx, 'executions:read')
 	const execution = await repo.findExecutionById(db, executionId, workspaceId)
 	if (!execution) {
 		throw new NotFoundError(`Execution ${executionId} not found`)

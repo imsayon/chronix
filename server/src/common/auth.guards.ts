@@ -33,7 +33,7 @@ export function requireWorkspaceRole(ctx: RequestContext, minimum: WorkspaceRole
 
 export function requireScope(ctx: RequestContext, scope: ApiKeyScope): void {
   const auth = requireAuth(ctx);
-  if (auth.type === "api_key" && !auth.scopes.includes(scope)) {
+  if (auth.type === "api_key" && !auth.scopes.includes(scope) && !auth.scopes.includes("admin")) {
     throw new ForbiddenError(`API key does not have the '${scope}' scope.`);
   }
 }

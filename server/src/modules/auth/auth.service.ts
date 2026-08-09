@@ -1,6 +1,14 @@
+import { Prisma } from "../../generated/prisma/client.js";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { Config } from "../../common/config/index.js";
-import type { RegisterInput, LoginInput, AuthResult, TokenPair, RequestContext } from "../../common/auth.types.js";
+import type {
+  RegisterInput,
+  LoginInput,
+  AuthResult,
+  TokenPair,
+  RequestContext,
+  AuthenticatedAccount,
+} from "../../common/auth.types.js";
 import {
   InvalidCredentialsError,
   EmailAlreadyRegisteredError,
@@ -20,43 +28,18 @@ import {
   revokeRefreshTokenFamily,
 } from "./auth.repository.js";
 import { newUUIDv7 } from "../../common/ids.js";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
+import { NotFoundError } from "../../common/errors/http-errors.js";
 
 const REFRESH_TOKEN_BYTES = 32;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function refreshExpiresAt(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
-  return d;
+  const date = new Date();
+  date.setDate(date.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
+  return date;
 }
 
-async function issueTokenPair(
-  db: PrismaClient,
-  config: Config,
-  accountId: string,
-  workspaceId: string,
-  familyId?: string,
-): Promise<TokenPair> {
-  const rawToken = randomBase64Url(REFRESH_TOKEN_BYTES);
-  const tokenHash = sha256Hex(rawToken);
-  const sessionId = familyId ?? newUUIDv7();
-  const expiresAt = refreshExpiresAt();
-
-  await insertRefreshToken(db, { accountId, tokenHash, familyId: sessionId, expiresAt });
-
-  const accessToken = await signAccessToken(
-    { sub: accountId, wid: workspaceId, sid: sessionId },
-    config.JWT_PRIVATE_KEY,
-  );
-
-  return { accessToken, refreshToken: rawToken, refreshExpiresAt: expiresAt };
-}
-
-function omitPasswordHash(account: { id: string; email: string; passwordHash: string; displayName: string; isActive: boolean; createdAt: Date; updatedAt: Date }) {
+function omitPasswordHash(account: AuthenticatedAccount & { passwordHash?: string }): AuthenticatedAccount {
   return {
     id: account.id,
     email: account.email,
@@ -67,7 +50,44 @@ function omitPasswordHash(account: { id: string; email: string; passwordHash: st
   };
 }
 
-// ─── Register ─────────────────────────────────────────────────────────────────
+async function issueTokenPair(
+  db: PrismaClient | Prisma.TransactionClient,
+  config: Config,
+  accountId: string,
+  workspaceId: string,
+  familyId = newUUIDv7(),
+): Promise<TokenPair> {
+  const rawToken = randomBase64Url(REFRESH_TOKEN_BYTES);
+  const expiresAt = refreshExpiresAt();
+  await insertRefreshToken(db, {
+    accountId,
+    workspaceId,
+    tokenHash: sha256Hex(rawToken),
+    familyId,
+    expiresAt,
+  });
+
+  return {
+    accessToken: await signAccessToken({ sub: accountId, wid: workspaceId, sid: familyId }, config.JWT_PRIVATE_KEY),
+    refreshToken: rawToken,
+    refreshExpiresAt: expiresAt,
+  };
+}
+
+async function findPrimaryWorkspace(db: PrismaClient | Prisma.TransactionClient, accountId: string): Promise<string | null> {
+  const membership = await db.workspaceMembership.findFirst({
+    where: { accountId, workspace: { deletedAt: null } },
+    orderBy: { createdAt: "asc" },
+    select: { workspaceId: true },
+  });
+  return membership?.workspaceId ?? null;
+}
+
+export async function getAccount(db: PrismaClient, accountId: string): Promise<AuthenticatedAccount> {
+  const account = await findAccountById(db, accountId);
+  if (account === null || !account.isActive) throw new SessionExpiredError();
+  return omitPasswordHash(account);
+}
 
 export async function register(
   db: PrismaClient,
@@ -75,54 +95,34 @@ export async function register(
   ctx: RequestContext,
   input: RegisterInput,
 ): Promise<AuthResult> {
-  // Check uniqueness before hashing (cheap fast path)
-  const existing = await findAccountByEmail(db, input.email.toLowerCase().trim());
-  if (existing !== null) throw new EmailAlreadyRegisteredError();
-
+  const email = input.email.toLowerCase().trim();
   const passwordHash = await hashPassword(input.password);
 
-  // Transactional: account + workspace + membership + audit
-  const { account, workspaceId } = await db.$transaction(async (trx) => {
-    const acc = await trx.account.create({
-      data: {
-        email: input.email.toLowerCase().trim(),
-        passwordHash,
-        displayName: input.displayName.trim(),
-      },
+  try {
+    const result = await db.$transaction(async (trx) => {
+      const account = await trx.account.create({
+        data: { email, passwordHash, displayName: input.displayName.trim() },
+      });
+      const slug = `${input.displayName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48)}-${account.id.slice(-8)}`;
+      const workspace = await trx.workspace.create({
+        data: { name: `${input.displayName.trim()}'s Workspace`, slug },
+      });
+      await trx.workspaceMembership.create({
+        data: { workspaceId: workspace.id, accountId: account.id, role: "owner" },
+      });
+      const tokenPair = await issueTokenPair(trx, config, account.id, workspace.id);
+      return { account, workspaceId: workspace.id, tokenPair };
     });
 
-    // Derive workspace slug from display name
-    const slug = input.displayName
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48)
-      + "-" + acc.id.slice(-8);
-
-    const workspace = await trx.workspace.create({
-      data: { name: `${input.displayName.trim()}'s Workspace`, slug },
-    });
-
-    await trx.workspaceMembership.create({
-      data: { workspaceId: workspace.id, accountId: acc.id, role: "owner" },
-    });
-
-    return { account: acc, workspaceId: workspace.id };
-  });
-
-  // Audit outside the transaction (fail-safe)
-  await writeAuditEvent(db, ctx, workspaceId, "account.registered", { accountId: account.id });
-
-  const tokenPair = await issueTokenPair(db, config, account.id, workspaceId);
-
-  return {
-    account: omitPasswordHash(account),
-    tokenPair,
-  };
+    await writeAuditEvent(db, ctx, result.workspaceId, "account.registered", { accountId: result.account.id });
+    return { account: omitPasswordHash(result.account), tokenPair: result.tokenPair };
+  } catch (error: unknown) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new EmailAlreadyRegisteredError();
+    }
+    throw error;
+  }
 }
-
-// ─── Login ────────────────────────────────────────────────────────────────────
 
 export async function login(
   db: PrismaClient,
@@ -131,83 +131,113 @@ export async function login(
   input: LoginInput,
 ): Promise<AuthResult> {
   const account = await findAccountByEmail(db, input.email.toLowerCase().trim());
-  if (account === null) throw new InvalidCredentialsError();
+  if (account === null || !(await verifyPassword(account.passwordHash, input.password))) {
+    throw new InvalidCredentialsError();
+  }
   if (!account.isActive) throw new InactiveAccountError();
 
-  const valid = await verifyPassword(account.passwordHash, input.password);
-  if (!valid) throw new InvalidCredentialsError();
-
-  // Find the account's primary workspace (first owned workspace)
-  const membership = await db.workspaceMembership.findFirst({
-    where: { accountId: account.id },
-    orderBy: { createdAt: "asc" },
-    select: { workspaceId: true },
-  });
-
-  const workspaceId = membership?.workspaceId ?? newUUIDv7(); // fallback shouldn't happen post-register
-
+  const workspaceId = await findPrimaryWorkspace(db, account.id);
+  if (workspaceId === null) throw new SessionExpiredError();
   await writeAuditEvent(db, ctx, workspaceId, "account.login", { accountId: account.id });
-
   const tokenPair = await issueTokenPair(db, config, account.id, workspaceId);
-
-  return {
-    account: omitPasswordHash(account),
-    tokenPair,
-  };
+  return { account: omitPasswordHash(account), tokenPair };
 }
 
-// ─── Refresh ──────────────────────────────────────────────────────────────────
+interface LockedRefreshToken {
+  id: string;
+  accountId: string;
+  workspaceId: string | null;
+  familyId: string;
+  revokedAt: Date | null;
+  expiresAt: Date;
+}
+
+async function lockRefreshToken(
+  trx: Prisma.TransactionClient,
+  tokenHash: string,
+): Promise<LockedRefreshToken | null> {
+  const rows = await trx.$queryRaw<LockedRefreshToken[]>(Prisma.sql`
+    SELECT id, account_id AS "accountId", workspace_id AS "workspaceId", family_id AS "familyId",
+           revoked_at AS "revokedAt", expires_at AS "expiresAt"
+    FROM refresh_tokens
+    WHERE token_hash = ${tokenHash}
+    FOR UPDATE
+  `);
+  return rows[0] ?? null;
+}
 
 export async function refreshTokens(
   db: PrismaClient,
   config: Config,
+  ctx: RequestContext,
   rawToken: string,
 ): Promise<AuthResult> {
   const tokenHash = sha256Hex(rawToken);
-  const stored = await findRefreshTokenByHash(db, tokenHash);
+  const outcome = await db.$transaction(async (trx) => {
+    const stored = await lockRefreshToken(trx, tokenHash);
+    if (stored === null) return { kind: "missing" as const };
 
-  if (stored === null) throw new SessionExpiredError();
+    if (stored.revokedAt !== null) {
+      await revokeRefreshTokenFamily(trx, stored.familyId);
+      await trx.auditEvent.create({
+        data: {
+          actorType: "system",
+          workspaceId: stored.workspaceId,
+          eventType: "auth.refresh_token_reuse",
+          metadata: { familyId: stored.familyId },
+          ipAddress: ctx.ip,
+          userAgent: ctx.userAgent,
+        },
+      });
+      return { kind: "reuse" as const };
+    }
 
-  // Reuse detection — token was already revoked: nuke the entire family
-  if (stored.revokedAt !== null) {
-    await revokeRefreshTokenFamily(db, stored.familyId);
-    throw new RefreshTokenReuseError();
-  }
+    if (stored.expiresAt <= new Date()) {
+      await revokeRefreshToken(trx, stored.id);
+      return { kind: "expired" as const };
+    }
 
-  if (stored.expiresAt < new Date()) {
-    await revokeRefreshToken(db, stored.id);
-    throw new SessionExpiredError();
-  }
+    const account = await trx.account.findUnique({ where: { id: stored.accountId } });
+    if (account === null || !account.isActive) return { kind: "inactive" as const };
+    const workspaceId = stored.workspaceId ?? await findPrimaryWorkspace(trx, account.id);
+    if (workspaceId === null) return { kind: "missing_workspace" as const };
 
-  // Revoke the presented token before issuing a new one (rotation)
-  await revokeRefreshToken(db, stored.id);
-
-  const account = await findAccountById(db, stored.accountId);
-  if (account === null) throw new SessionExpiredError();
-  if (!account.isActive) throw new InactiveAccountError();
-
-  // Find primary workspace
-  const membership = await db.workspaceMembership.findFirst({
-    where: { accountId: account.id },
-    orderBy: { createdAt: "asc" },
-    select: { workspaceId: true },
+    await revokeRefreshToken(trx, stored.id);
+    const tokenPair = await issueTokenPair(trx, config, account.id, workspaceId, stored.familyId);
+    return { kind: "ok" as const, account, tokenPair, workspaceId };
   });
-  const workspaceId = membership?.workspaceId ?? newUUIDv7();
 
-  // Issue new token pair in the same family (session continues)
-  const tokenPair = await issueTokenPair(db, config, account.id, workspaceId, stored.familyId);
-
-  return {
-    account: omitPasswordHash(account),
-    tokenPair,
-  };
+  if (outcome.kind === "reuse") throw new RefreshTokenReuseError();
+  if (outcome.kind !== "ok") throw new SessionExpiredError();
+  await writeAuditEvent(db, ctx, outcome.workspaceId, "account.refresh", { accountId: outcome.account.id });
+  return { account: omitPasswordHash(outcome.account), tokenPair: outcome.tokenPair };
 }
 
-// ─── Logout ───────────────────────────────────────────────────────────────────
+export async function logout(db: PrismaClient, ctx: RequestContext, rawToken: string): Promise<void> {
+  const stored = await findRefreshTokenByHash(db, sha256Hex(rawToken));
+  if (stored === null) return;
+  await revokeRefreshTokenFamily(db, stored.familyId);
+  if (stored.workspaceId !== null) {
+    await writeAuditEvent(db, ctx, stored.workspaceId, "account.logout", { familyId: stored.familyId });
+  }
+}
 
-export async function logout(db: PrismaClient, rawToken: string): Promise<void> {
-  const tokenHash = sha256Hex(rawToken);
-  const stored = await findRefreshTokenByHash(db, tokenHash);
-  if (stored === null || stored.revokedAt !== null) return; // already gone — idempotent
-  await revokeRefreshToken(db, stored.id);
+export async function switchWorkspace(
+  db: PrismaClient,
+  config: Config,
+  ctx: RequestContext,
+  workspaceId: string,
+): Promise<string> {
+  if (ctx.auth?.type !== "account") throw new NotFoundError("Workspace not found.");
+  const membership = await db.workspaceMembership.findFirst({
+    where: { accountId: ctx.auth.accountId, workspaceId, workspace: { deletedAt: null } },
+    select: { workspaceId: true },
+  });
+  if (membership === null) throw new NotFoundError("Workspace not found.");
+  await db.refreshToken.updateMany({
+    where: { familyId: ctx.auth.sessionId, revokedAt: null },
+    data: { workspaceId },
+  });
+  await writeAuditEvent(db, ctx, workspaceId, "account.workspace_switched", { workspaceId });
+  return signAccessToken({ sub: ctx.auth.accountId, wid: workspaceId, sid: ctx.auth.sessionId }, config.JWT_PRIVATE_KEY);
 }

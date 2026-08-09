@@ -1,6 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client.js"
 import type { WorkspaceRole } from "../../common/auth.types.js"
-import { ConflictError } from "../../common/errors/http-errors.js"
+import { MemberAlreadyExistsError } from "../../common/errors/http-errors.js"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,14 @@ export async function findWorkspacesByMembership(
 	return memberships
 		.filter((m) => m.workspace.deletedAt === null)
 		.map((m) => mapWorkspace(m.workspace))
+}
+
+export async function findWorkspaceListForApiKey(
+  db: PrismaClient,
+  workspaceId: string,
+): Promise<Workspace[]> {
+  const row = await db.workspace.findFirst({ where: { id: workspaceId, deletedAt: null } });
+  return row === null ? [] : [mapWorkspace(row)];
 }
 
 export async function insertWorkspace(
@@ -113,10 +121,8 @@ export async function addMember(
 			data: { workspaceId, accountId, role },
 		})
 		return mapMembership(row)
-	} catch {
-		throw new ConflictError(
-			"Account is already a member of this workspace.",
-		)
+  } catch {
+    throw new MemberAlreadyExistsError()
 	}
 }
 

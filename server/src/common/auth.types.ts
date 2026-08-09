@@ -13,6 +13,7 @@ export interface Account {
 export interface RefreshToken {
   id: string;
   accountId: string;
+  workspaceId: string | null;
   tokenHash: string;
   familyId: string;
   revokedAt: Date | null;
@@ -50,6 +51,15 @@ export interface RequestContext {
   requestId: string;
   ip: string;
   userAgent: string;
+}
+
+export interface AuthenticatedAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // ─── Auth context (populated by auth middleware) ──────────────────────────────
