@@ -14,6 +14,8 @@ Errors use:
 
 The `X-Request-Id` response header matches `meta.requestId`. Clients may provide a valid request identifier; otherwise Chronix creates one. List endpoints are bounded and cursor-paginated.
 
+The machine-readable contract is served at `/api/v1/openapi.json` as OpenAPI 3.1 and is generated from the runtime Zod schemas.
+
 ## Resource groups
 
 | Resource | Base route | Purpose |
@@ -32,10 +34,16 @@ Interactive clients send `Authorization: Bearer <ES256 access token>` and receiv
 
 Authentication never replaces tenant authorization: every resource operation also checks the requested workspace and the required role or scope.
 
+## Sensitive material and exports
+
+`POST /workspaces/:workspaceId/jobs` returns a generated `signingSecret` exactly once. `POST /workspaces/:workspaceId/jobs/:jobId/signing-secret/rotate` returns the replacement exactly once. Headers and body templates are encrypted at rest and redacted from API responses.
+
+`GET /workspaces/:workspaceId/executions/export?limit=10000` streams a bounded CSV export of workspace-scoped execution history.
+
 ## Idempotency and delivery
 
 Manual trigger requests return HTTP `202` with an execution identifier. Retried trigger requests use idempotency semantics so one logical request cannot create unbounded duplicate executions.
 
 Outbound webhooks include stable Chronix execution, attempt, schedule, job, workspace, idempotency, and signature headers. Delivery is at-least-once; receivers should persist the idempotency key before applying side effects.
 
-The generated OpenAPI 3.1 document will be served at `/api/v1/openapi.json` when the scheduling-contract phase lands. Runtime Zod schemas are its source, so documentation and validation cannot drift independently.
+Runtime Zod schemas are the OpenAPI source, so documentation and validation cannot drift independently.

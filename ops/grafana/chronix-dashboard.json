@@ -1,0 +1,10 @@
+{
+  "title": "Chronix operations",
+  "schemaVersion": 39,
+  "editable": false,
+  "panels": [
+    { "type": "timeseries", "title": "Schedule claims", "targets": [{ "expr": "sum(rate(chronix_schedule_claim_total[5m])) by (status)" }] },
+    { "type": "timeseries", "title": "Execution outcomes", "targets": [{ "expr": "sum(rate(chronix_execution_outcome_total[5m])) by (outcome)" }] },
+    { "type": "stat", "title": "Outbox backlog", "targets": [{ "expr": "chronix_execution_outbox_unpublished" }] }
+  ]
+}

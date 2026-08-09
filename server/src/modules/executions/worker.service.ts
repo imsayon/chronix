@@ -4,6 +4,8 @@ import * as jobsRepo from '../jobs/jobs.repository.js'
 import { executeWebhook } from '../../infra/http-client/client.js'
 import type { DeliveryClient } from '../../infra/http-client/client.js'
 import { logger } from '../../infra/telemetry.js'
+import { Counter } from 'prom-client'
+import { registry } from '../../infra/telemetry.js'
 
 const defaultDeliver: DeliveryClient['deliver'] = (input) => executeWebhook(
 	input.url,
@@ -13,6 +15,7 @@ const defaultDeliver: DeliveryClient['deliver'] = (input) => executeWebhook(
 	input.timeoutMs,
 	input.chronixHeaders,
 )
+const executionOutcomeTotal = new Counter({ name: 'chronix_execution_outcome_total', help: 'Execution outcomes by delivery classification', labelNames: ['outcome'], registers: [registry] })
 
 export async function processExecution(
 	db: PrismaClient,
@@ -63,6 +66,7 @@ export async function processExecution(
 				workspaceId: execution.workspaceId,
 			},
 		})
+		executionOutcomeTotal.labels(response.outcome).inc()
 		const attemptFinishedAt = new Date()
 
 		// 4. Record the attempt in the database

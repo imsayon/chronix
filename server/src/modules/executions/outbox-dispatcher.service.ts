@@ -1,7 +1,11 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Queue } from 'bullmq'
 import { logger } from '../../infra/telemetry.js'
+import { Gauge } from 'prom-client'
+import { registry } from '../../infra/telemetry.js'
 import * as outboxRepo from './outbox.repository.js'
+
+const outboxBacklog = new Gauge({ name: 'chronix_execution_outbox_unpublished', help: 'Unpublished execution outbox records', registers: [registry] })
 
 export async function dispatchPending(
 	db: PrismaClient,
@@ -11,6 +15,7 @@ export async function dispatchPending(
 
 	try {
 		const records = await outboxRepo.findUnpublishedOutbox(db, { limit: 100 })
+		outboxBacklog.set(records.length)
 
 		for (const record of records) {
 			try {

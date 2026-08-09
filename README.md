@@ -2,7 +2,7 @@
 
 Chronix is a self-hostable distributed scheduler for durable outbound HTTP webhooks. PostgreSQL owns schedule and execution state, a transactional outbox bridges committed work to BullMQ on Valkey, and fenced database leases prevent stale workers from overwriting newer outcomes.
 
-> Current release state: the reproducible foundation is implemented and verified. Identity, scheduling, delivery hardening, and production operations are being completed in separate reviewed phases; this README does not claim those phases are production-ready before their acceptance gates pass.
+> Current release state: Phases 0–3 are implemented, tested, and merged. Phase 4 operations and hosted deployment remain subject to the final CI, browser, staging, and provider-credential gates.
 
 ## Architecture
 
@@ -27,6 +27,8 @@ The server has two bootstraps only: `src/app.ts` for the API and `src/worker.ts`
 - Delivery is durable at-least-once. Receivers must honor the stable idempotency key for effectively exactly-once effects.
 - Schedule claiming and execution ownership use database concurrency controls and fencing generations.
 - Every tenant resource is scoped to a workspace.
+- Job headers, bodies, and signing secrets use versioned AES-256-GCM encryption; signing secrets are disclosed only at creation or rotation.
+- Execution history is bounded by workspace retention settings and can be exported as a bounded CSV stream.
 - The MVP excludes DAGs, arbitrary code execution, multi-region consensus, Kubernetes, and MFA.
 
 ## Local setup
@@ -38,7 +40,7 @@ cp server/.env.example server/.env
 cp client/.env.example client/.env.local
 ```
 
-Replace the JWT and HMAC placeholders in `server/.env`. Use an ES256 P-256 key pair and encode PEM line breaks as `\n` inside the env file. Then start the complete topology:
+Replace the JWT, HMAC, and 32-byte `APP_ENCRYPTION_KEY` placeholders in `server/.env`. Use an ES256 P-256 key pair and encode PEM line breaks as `\n` inside the env file. Then start the complete topology:
 
 ```bash
 docker compose --file ops/docker-compose.yml up --build
@@ -82,6 +84,8 @@ Integration tests provision isolated PostgreSQL 18 and Valkey containers; they n
 - [API conventions](docs/API.MD)
 - [Architecture decisions](docs/DECISIONS.md)
 - [Contributing](docs/CONTRIBUTING.MD)
+- [Operations runbook](ops/runbooks/README.md)
+- [Render Blueprint](render.yaml)
 
 ## License
 

@@ -1,0 +1,18 @@
+groups:
+  - name: chronix
+    rules:
+      - alert: ChronixApiNotReady
+        expr: up{job="chronix-api"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Chronix API is unavailable" }
+      - alert: ChronixOutboxBacklog
+        expr: chronix_execution_outbox_unpublished > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Chronix outbox backlog is growing" }
+      - alert: ChronixSchedulerLag
+        expr: histogram_quantile(0.99, sum(rate(chronix_scheduler_lag_seconds_bucket[5m])) by (le)) > 10
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Chronix scheduler lag exceeds the operational budget" }
