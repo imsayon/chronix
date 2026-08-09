@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Server ────────────────────────────────────────────────────────────────
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Prisma loads configuration before commands that do not connect. Runtime
+      # integration tests replace this with their isolated Testcontainers URL.
+      DATABASE_URL: postgresql://chronix:build@localhost:5432/chronix
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.21.0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: 'pnpm'
+          cache-dependency-path: server/pnpm-lock.yaml
+
+      # (1) Reproducible install
+      - name: Install dependencies
+        working-directory: server
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        working-directory: server
+        run: pnpm prisma validate
+
+      # (2) Type check
+      - name: Type check
+        working-directory: server
+        run: pnpm typecheck
+
+      # (3) Lint
+      - name: Lint
+        working-directory: server
+        run: pnpm lint
+
+      # (4) Unit tests — fast, no Docker
+      - name: Unit tests
+        working-directory: server
+        run: pnpm test:unit
+
+      # (5) Integration tests — real PostgreSQL + Redis via Testcontainers
+      - name: Integration tests
+        working-directory: server
+        run: pnpm test:integration
+
+      # (6) Production build
+      - name: Build
+        working-directory: server
+        run: pnpm build
+
+      # (7) Vulnerability audit
+      - name: Security audit
+        working-directory: server
+        run: pnpm audit --audit-level=high
+
+      - name: Check repository whitespace
+        run: git diff --check
+
+  # ─── Client ────────────────────────────────────────────────────────────────
+  client:
+    name: Client
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.21.0'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: 'pnpm'
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      # (1) Reproducible install
+      - name: Install dependencies
+        working-directory: client
+        run: pnpm install --frozen-lockfile
+
+      # (2) Type check
+      - name: Type check
+        working-directory: client
+        run: pnpm typecheck
+
+      # (3) Lint
+      - name: Lint
+        working-directory: client
+        run: pnpm lint
+
+      # (4) Production build
+      - name: Build
+        working-directory: client
+        run: pnpm build
+
+      # (5) Vulnerability audit
+      - name: Security audit
+        working-directory: client
+        run: pnpm audit --audit-level=high
+
+      - name: Validate Compose configuration
+        run: |
+          cp server/.env.example server/.env
+          docker compose --file ops/docker-compose.yml config --quiet

@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { FakeClock } from "./clock.js";
+describe("FakeClock", () => { it("advances without exposing mutable state", () => { const clock = new FakeClock(new Date("2026-01-01T00:00:00.000Z")); const leaked = clock.now(); leaked.setUTCFullYear(2030); clock.advance(5_000); expect(clock.now()).toEqual(new Date("2026-01-01T00:00:05.000Z")); }); it("sets an exact instant", () => { const clock = new FakeClock(new Date("2026-01-01T00:00:00.000Z")); clock.set(new Date("2026-06-01T12:00:00.000Z")); expect(clock.now()).toEqual(new Date("2026-06-01T12:00:00.000Z")); }); });
