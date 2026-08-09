@@ -68,6 +68,7 @@ export function createTestConfig(
     API_PORT: 3000,
     CORS_ORIGIN: ["http://localhost:3001"],
     API_KEY_HMAC_SECRET: "test-hmac-secret-that-is-at-least-32-characters",
+    APP_ENCRYPTION_KEY: "chronix-test-encryption-key-32b!",
     ARGON2_MEMORY_COST: 8_192,
     SCHEDULER_TICK_MS: 1_000,
     SCHEDULER_BATCH_SIZE: 50,

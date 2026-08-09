@@ -63,7 +63,7 @@ export function createHttpServer(
 	)
 	app.use(
 		"/api/v1/workspaces/:workspaceId/jobs",
-		createJobsRouter(database),
+		createJobsRouter(database, config),
 	)
 	app.use(
 		"/api/v1/workspaces/:workspaceId/schedules",

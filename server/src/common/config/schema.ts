@@ -13,6 +13,7 @@ export const configSchema = z
     JWT_PRIVATE_KEY: z.string().min(1),
     JWT_PUBLIC_KEY: z.string().min(1),
     API_KEY_HMAC_SECRET: z.string().min(32),
+    APP_ENCRYPTION_KEY: z.string().min(32),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(8192).default(65536),
     SCHEDULER_TICK_MS: z.coerce.number().int().min(1000).default(5000),
     SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),

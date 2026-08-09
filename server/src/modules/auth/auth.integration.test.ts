@@ -451,3 +451,31 @@ describe("OpenAPI contract", () => {
     expect(res.body.components.securitySchemes.bearerAuth.scheme).toBe("bearer");
   });
 });
+
+describe("encrypted job material", () => {
+  it("returns a signing secret once and redacts encrypted material thereafter", async () => {
+    const registration = await registerUser(uniqueEmail());
+    const token = registration.body.data.accessToken as string;
+    const workspaceId = (await app.get("/api/v1/workspaces").set("Authorization", `Bearer ${token}`)).body.data.workspaces[0].id as string;
+
+    const create = await app.post(`/api/v1/workspaces/${workspaceId}/jobs`).set("Authorization", `Bearer ${token}`).send({
+      name: "Encrypted target",
+      targetUrl: "https://example.com/webhook",
+      headers: { Authorization: "Bearer should-not-leak" },
+      bodyTemplate: '{"secret":"should-not-leak"}',
+    });
+    expect(create.status).toBe(201);
+    expect(create.body.data.signingSecret).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+    expect(create.body.data.headers.Authorization).toBe("[REDACTED]");
+    expect(create.body.data.bodyTemplate).toBeNull();
+
+    const jobId = create.body.data.id as string;
+    const get = await app.get(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}`).set("Authorization", `Bearer ${token}`);
+    expect(get.body.data.headers.Authorization).toBe("[REDACTED]");
+    expect(JSON.stringify(get.body)).not.toContain("should-not-leak");
+
+    const rotated = await app.post(`/api/v1/workspaces/${workspaceId}/jobs/${jobId}/signing-secret/rotate`).set("Authorization", `Bearer ${token}`);
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.data.signingSecret).toBeDefined();
+  });
+});

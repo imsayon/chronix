@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { Config } from '../../common/config/index.js'
 import { success } from '../../common/http/envelope.js'
 import { buildRequestContext } from '../../common/auth.guards.js'
 import { ValidationError } from '../../common/errors/http-errors.js'
@@ -37,7 +38,7 @@ export const listJobsSchema = z.object({
 	isEnabled: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
 })
 
-export function createJobsRouter(db: PrismaClient): Router {
+export function createJobsRouter(db: PrismaClient, config: Config): Router {
 	const router = Router({ mergeParams: true })
 
 	router.get('/', (req: Request<WorkspaceParams>, res: Response, next: NextFunction) => {
@@ -45,7 +46,7 @@ export function createJobsRouter(db: PrismaClient): Router {
 		const { workspaceId } = req.params
 		const parsed = listJobsSchema.safeParse(req.query)
 		if (!parsed.success) return void next(new ValidationError(parsed.error.issues))
-		service.listJobs(db, ctx, workspaceId, parsed.data as Parameters<typeof service.listJobs>[3]).then(r => res.json(success(res, r))).catch(next)
+		service.listJobs(db, ctx, workspaceId, parsed.data as Parameters<typeof service.listJobs>[3], config.APP_ENCRYPTION_KEY).then(r => res.json(success(res, r))).catch(next)
 	})
 
 	router.post('/', (req: Request<WorkspaceParams>, res: Response, next: NextFunction) => {
@@ -53,13 +54,13 @@ export function createJobsRouter(db: PrismaClient): Router {
 		const { workspaceId } = req.params
 		const parsed = createJobSchema.safeParse(req.body)
 		if (!parsed.success) return void next(new ValidationError(parsed.error.issues))
-		service.createJob(db, ctx, workspaceId, parsed.data).then(r => res.status(201).json(success(res, r))).catch(next)
+		service.createJob(db, ctx, workspaceId, parsed.data, config.APP_ENCRYPTION_KEY).then(r => res.status(201).json(success(res, { ...service.redactJob(r.job), signingSecret: r.signingSecret }))).catch(next)
 	})
 
 	router.get('/:jobId', (req: Request<JobParams>, res: Response, next: NextFunction) => {
 		const ctx = buildRequestContext(req, res)
 		const { workspaceId, jobId } = req.params
-		service.getJob(db, ctx, workspaceId, jobId).then(r => res.json(success(res, r))).catch(next)
+		service.getJob(db, ctx, workspaceId, jobId, config.APP_ENCRYPTION_KEY).then(r => res.json(success(res, r))).catch(next)
 	})
 
 	router.patch('/:jobId', (req: Request<JobParams>, res: Response, next: NextFunction) => {
@@ -67,19 +68,26 @@ export function createJobsRouter(db: PrismaClient): Router {
 		const { workspaceId, jobId } = req.params
 		const parsed = updateJobSchema.safeParse(req.body)
 		if (!parsed.success) return void next(new ValidationError(parsed.error.issues))
-		service.updateJob(db, ctx, workspaceId, jobId, parsed.data as Parameters<typeof service.updateJob>[4]).then(r => res.json(success(res, r))).catch(next)
+		service.updateJob(db, ctx, workspaceId, jobId, parsed.data as Parameters<typeof service.updateJob>[4], config.APP_ENCRYPTION_KEY).then(r => res.json(success(res, r))).catch(next)
 	})
 
 	router.post('/:jobId/enable', (req: Request<JobParams>, res: Response, next: NextFunction) => {
 		const ctx = buildRequestContext(req, res)
 		const { workspaceId, jobId } = req.params
-		service.enableJob(db, ctx, workspaceId, jobId).then(r => res.json(success(res, r))).catch(next)
+		service.enableJob(db, ctx, workspaceId, jobId).then(r => res.json(success(res, service.redactJob(r)))).catch(next)
 	})
 
 	router.post('/:jobId/disable', (req: Request<JobParams>, res: Response, next: NextFunction) => {
 		const ctx = buildRequestContext(req, res)
 		const { workspaceId, jobId } = req.params
-		service.disableJob(db, ctx, workspaceId, jobId).then(r => res.json(success(res, r))).catch(next)
+		service.disableJob(db, ctx, workspaceId, jobId).then(r => res.json(success(res, service.redactJob(r)))).catch(next)
+	})
+
+	router.post('/:jobId/signing-secret/rotate', (req: Request<JobParams>, res: Response, next: NextFunction) => {
+		const ctx = buildRequestContext(req, res)
+		const { workspaceId, jobId } = req.params
+		service.rotateSigningSecret(db, ctx, workspaceId, jobId, config.APP_ENCRYPTION_KEY)
+			.then((result) => res.status(200).json(success(res, result))).catch(next)
 	})
 
 	router.delete('/:jobId', (req: Request<JobParams>, res: Response, next: NextFunction) => {
