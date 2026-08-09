@@ -3,6 +3,7 @@ import type { RequestContext } from '../../common/auth.types.js'
 import { requireWorkspaceAccess, requireScope } from '../../common/auth.guards.js'
 import { writeAuditEvent } from '../../common/audit.js'
 import { DateTime } from 'luxon'
+import { CronExpressionParser } from 'cron-parser'
 
 import * as repo from './schedules.repository.js'
 import * as jobRepo from '../jobs/jobs.repository.js'
@@ -16,11 +17,14 @@ import {
 	ScheduleNotPausedError,
 	InvalidTimezoneError,
 	OneTimeInPastError,
-	JobDisabledError
+	JobDisabledError,
+	InvalidCronError,
+	ScheduleInvariantError
 } from './schedules.errors.js'
+import { VersionConflictError } from '../../common/errors/http-errors.js'
 import { JobNotFoundError } from '../jobs/jobs.errors.js'
 
-import { computeNextOccurrence, deriveIdempotencyKey } from './schedule.semantics.js'
+import { computeNextOccurrence, deriveManualIdempotencyKey } from './schedule.semantics.js'
 
 function validateTimezone(timezone: string) {
 	if (!DateTime.local().setZone(timezone).isValid) {
@@ -47,7 +51,8 @@ export async function createSchedule(db: PrismaClient, ctx: RequestContext, work
 	let computedNextRunAt: Date | null = null
 
 	if (input.scheduleType === 'cron') {
-		if (!input.cronExpression) throw new Error('cronExpression is required for cron schedules')
+		if (!input.cronExpression) throw new ScheduleInvariantError('cronExpression is required for cron schedules')
+		try { CronExpressionParser.parse(input.cronExpression, { currentDate: now, tz: timezone }) } catch { throw new InvalidCronError() }
 		computedNextRunAt = computeNextOccurrence({
 			scheduleType: 'cron',
 			cronExpression: input.cronExpression,
@@ -55,7 +60,7 @@ export async function createSchedule(db: PrismaClient, ctx: RequestContext, work
 		}, now)
 	} else if (input.scheduleType === 'one_time') {
 		if (!input.runAt) {
-			throw new Error('runAt is required for one_time schedules')
+			throw new ScheduleInvariantError('runAt is required for one_time schedules')
 		}
 		if (input.runAt <= now) {
 			throw new OneTimeInPastError()
@@ -102,6 +107,18 @@ export async function updateSchedule(db: PrismaClient, ctx: RequestContext, work
 	requireWorkspaceAccess(ctx, workspaceId)
 	requireScope(ctx, 'schedules:write')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
+	if (schedule.scheduleType === 'cron' && input.runAt !== undefined && input.runAt !== null) {
+		throw new ScheduleInvariantError('Cron schedules cannot define runAt.')
+	}
+	if (schedule.scheduleType === 'cron' && input.cronExpression === null) {
+		throw new ScheduleInvariantError('Cron schedules require cronExpression.')
+	}
+	if (schedule.scheduleType === 'one_time' && input.cronExpression !== undefined && input.cronExpression !== null) {
+		throw new ScheduleInvariantError('One-time schedules cannot define cronExpression.')
+	}
+	if (schedule.scheduleType === 'one_time' && input.runAt !== undefined && input.runAt !== null && input.runAt <= new Date()) {
+		throw new OneTimeInPastError()
+	}
 
 	const updates: Parameters<typeof repo.updateSchedule>[3] = { ...input }
 
@@ -115,6 +132,7 @@ export async function updateSchedule(db: PrismaClient, ctx: RequestContext, work
 		}
 
 		if (newCron) {
+			try { CronExpressionParser.parse(newCron, { currentDate: new Date(), tz: newTz || 'UTC' }) } catch { throw new InvalidCronError() }
 			const nextRunAt = computeNextOccurrence({
 				scheduleType: 'cron',
 				cronExpression: newCron,
@@ -128,6 +146,7 @@ export async function updateSchedule(db: PrismaClient, ctx: RequestContext, work
 
 	const updated = await repo.updateSchedule(db, scheduleId, workspaceId, updates)
 	if (!updated) {
+		if (input.version !== undefined) throw new VersionConflictError()
 		throw new ScheduleNotFoundError(scheduleId)
 	}
 
@@ -204,7 +223,7 @@ export async function deleteSchedule(db: PrismaClient, ctx: RequestContext, work
 	await writeAuditEvent(db, ctx, workspaceId, 'schedule.deleted', { scheduleId })
 }
 
-export async function triggerManual(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string) {
+export async function triggerManual(db: PrismaClient, ctx: RequestContext, workspaceId: string, scheduleId: string, clientIdempotencyKey?: string) {
 	requireWorkspaceAccess(ctx, workspaceId)
 	requireScope(ctx, 'executions:trigger')
 	const schedule = await getSchedule(db, ctx, workspaceId, scheduleId)
@@ -215,14 +234,20 @@ export async function triggerManual(db: PrismaClient, ctx: RequestContext, works
 	}
 
 	const now = new Date()
-	const idempotencyKey = deriveIdempotencyKey(schedule.id, now)
+	const idempotencyKey = deriveManualIdempotencyKey(schedule.id, clientIdempotencyKey)
 
 	let executionId!: string
 
 	const triggeredBy = ctx.auth?.type === 'account' ? ctx.auth.accountId : null
 
 	await db.$transaction(async (trx) => {
-		const exec = await executionRepo.insertExecution(trx as PrismaClient, {
+		const existing = await executionRepo.findExecutionByIdempotencyKey(trx, workspaceId, idempotencyKey)
+		if (existing) {
+			executionId = existing.id
+			return
+		}
+
+		const exec = await executionRepo.insertExecution(trx, {
 			workspaceId,
 			scheduleId: schedule.id,
 			jobId: schedule.jobId,
@@ -235,7 +260,7 @@ export async function triggerManual(db: PrismaClient, ctx: RequestContext, works
 		})
 		executionId = exec.id
 
-		await outboxRepo.insertOutbox(trx as PrismaClient, {
+		await outboxRepo.insertOutbox(trx, {
 			executionId,
 			payload: { executionId }
 		})

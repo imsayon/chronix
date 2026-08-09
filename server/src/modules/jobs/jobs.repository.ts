@@ -14,6 +14,7 @@ function mapJob(row: {
 	bodyTemplate: string | null
 	timeoutMs: number
 	isEnabled: boolean
+	version: number
 	deletedAt: Date | null
 	createdAt: Date
 	updatedAt: Date
@@ -29,6 +30,7 @@ function mapJob(row: {
 		bodyTemplate: row.bodyTemplate,
 		timeoutMs: row.timeoutMs,
 		isEnabled: row.isEnabled,
+		version: row.version,
 		deletedAt: row.deletedAt,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -115,6 +117,7 @@ export async function updateJobProperly(
 	id: string,
 	workspaceId: string,
 	data: Partial<{
+		version: number
 		name: string
 		description: string | null
 		targetUrl: string
@@ -130,9 +133,7 @@ export async function updateJobProperly(
 	if (!existing) return null
 
 	try {
-		const job = await db.job.update({
-			where: { id },
-			data: {
+		const updates = {
 				...(data.name !== undefined ? { name: data.name } : {}),
 				...(data.description !== undefined ? { description: data.description } : {}),
 				...(data.targetUrl !== undefined ? { targetUrl: data.targetUrl } : {}),
@@ -141,9 +142,19 @@ export async function updateJobProperly(
 				...(data.bodyTemplate !== undefined ? { bodyTemplate: data.bodyTemplate } : {}),
 				...(data.timeoutMs !== undefined ? { timeoutMs: data.timeoutMs } : {}),
 				...(data.isEnabled !== undefined ? { isEnabled: data.isEnabled } : {}),
-			},
-		})
-		return mapJob(job)
+				version: { increment: 1 },
+		}
+		if (data.version !== undefined) {
+			const result = await db.job.updateMany({
+				where: { id, workspaceId, deletedAt: null, version: data.version },
+				data: updates,
+			})
+			if (result.count === 0) return null
+		} else {
+			await db.job.update({ where: { id }, data: updates })
+		}
+		const updated = await db.job.findFirst({ where: { id, workspaceId, deletedAt: null } })
+		return updated ? mapJob(updated) : null
 	} catch (error: unknown) {
 		if ((error as { code?: string }).code === 'P2002') {
 			throw new JobNameTakenError(data.name ?? 'unknown')

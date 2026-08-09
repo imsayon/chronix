@@ -19,6 +19,7 @@ export interface Schedule {
   nextRunAt: string | null;
   createdAt: string;
   updatedAt: string;
+  version: number;
 }
 
 const getHeaders = (): Record<string, string> => {
@@ -43,10 +44,10 @@ export function useSchedule(workspaceId: string, scheduleId: string) {
   return useQuery({
     queryKey: ['schedule', workspaceId, scheduleId],
     queryFn: async () => {
-      const res = await apiFetch<{ schedule: Schedule }>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}`, {
+      const res = await apiFetch<Schedule>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}`, {
         headers: getHeaders(),
       });
-      return res.data.schedule;
+      return res.data;
     },
     enabled: !!workspaceId && !!scheduleId,
   });
@@ -56,12 +57,12 @@ export function useCreateSchedule(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: Partial<Schedule>) => {
-      const res = await apiFetch<{ schedule: Schedule }>(`/api/v1/workspaces/${workspaceId}/schedules`, {
+      const res = await apiFetch<Schedule>(`/api/v1/workspaces/${workspaceId}/schedules`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(data),
       });
-      return res.data.schedule;
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', workspaceId] });
@@ -73,11 +74,11 @@ export function usePauseSchedule(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (scheduleId: string) => {
-      const res = await apiFetch<{ schedule: Schedule }>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}/pause`, {
+      const res = await apiFetch<Schedule>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}/pause`, {
         method: 'POST',
         headers: getHeaders(),
       });
-      return res.data.schedule;
+      return res.data;
     },
     onSuccess: (_, scheduleId) => {
       queryClient.invalidateQueries({ queryKey: ['schedule', workspaceId, scheduleId] });
@@ -90,11 +91,11 @@ export function useResumeSchedule(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (scheduleId: string) => {
-      const res = await apiFetch<{ schedule: Schedule }>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}/resume`, {
+      const res = await apiFetch<Schedule>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}/resume`, {
         method: 'POST',
         headers: getHeaders(),
       });
-      return res.data.schedule;
+      return res.data;
     },
     onSuccess: (_, scheduleId) => {
       queryClient.invalidateQueries({ queryKey: ['schedule', workspaceId, scheduleId] });
@@ -108,7 +109,7 @@ export function useTriggerSchedule(workspaceId: string) {
     mutationFn: async (scheduleId: string) => {
       const res = await apiFetch<{ executionId: string }>(`/api/v1/workspaces/${workspaceId}/schedules/${scheduleId}/trigger`, {
         method: 'POST',
-        headers: getHeaders(),
+        headers: { ...getHeaders(), 'Idempotency-Key': crypto.randomUUID() },
       });
       return res.data;
     },

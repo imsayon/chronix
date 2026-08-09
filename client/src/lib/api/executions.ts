@@ -37,6 +37,7 @@ export interface Execution {
   terminalAt: string | null;
   createdAt: string;
   updatedAt: string;
+  version: number;
 }
 
 export interface ExecutionDetail extends Execution {
@@ -48,6 +49,7 @@ export interface ExecutionQuery {
   jobId?: string;
   status?: ExecutionStatus;
   limit?: number;
+  cursor?: string;
 }
 
 const getHeaders = (): Record<string, string> => {
@@ -64,6 +66,7 @@ export function useExecutions(workspaceId: string, query: ExecutionQuery = {}) {
       if (query.jobId !== undefined) search.set('jobId', query.jobId);
       if (query.status !== undefined) search.set('status', query.status);
       if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.cursor !== undefined) search.set('cursor', query.cursor);
       const suffix = search.size === 0 ? '' : `?${search.toString()}`;
       const response = await apiFetch<{ executions: Execution[] }>(
         `/api/v1/workspaces/${workspaceId}/executions${suffix}`,

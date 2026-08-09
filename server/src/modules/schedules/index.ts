@@ -11,7 +11,7 @@ import type { CreateScheduleInput, UpdateScheduleInput } from './schedules.types
 type WorkspaceParams = { workspaceId: string }
 type ScheduleParams = WorkspaceParams & { scheduleId: string }
 
-const createScheduleSchema = z.object({
+export const createScheduleSchema = z.object({
 	jobId: z.string().uuid(),
 	name: z.string().min(1).max(255),
 	description: z.string().max(1024).optional().nullable().default(null),
@@ -20,15 +20,16 @@ const createScheduleSchema = z.object({
 	timezone: z.string().optional(),
 	runAt: z.coerce.date().optional().nullable(),
 	misfirePolicy: z.enum(['coalesce', 'skip', 'catch_up']).optional(),
-	maxRetries: z.number().int().min(0).max(10).optional(),
-	retryBackoffBaseMs: z.number().int().min(1000).max(86400000).optional()
+	maxRetries: z.coerce.number().int().min(0).max(10).optional(),
+	retryBackoffBaseMs: z.coerce.number().int().min(1000).max(86400000).optional()
 }).refine((data) => {
 	if (data.scheduleType === 'cron' && (!data.cronExpression || data.runAt)) return false
 	if (data.scheduleType === 'one_time' && (!data.runAt || data.cronExpression)) return false
 	return true
 }, { message: "Invalid combination of scheduleType, cronExpression, and runAt" })
 
-const updateScheduleSchema = z.object({
+export const updateScheduleSchema = z.object({
+	version: z.coerce.number().int().min(0).optional(),
 	name: z.string().min(1).max(255).optional(),
 	description: z.string().max(1024).optional().nullable(),
 	cronExpression: z.string().optional().nullable(),
@@ -36,10 +37,11 @@ const updateScheduleSchema = z.object({
 	runAt: z.coerce.date().optional().nullable(),
 	misfirePolicy: z.enum(['coalesce', 'skip', 'catch_up']).optional(),
 	maxRetries: z.number().int().min(0).max(10).optional(),
-	retryBackoffBaseMs: z.number().int().min(1000).max(86400000).optional()
+	retryBackoffBaseMs: z.coerce.number().int().min(1000).max(86400000).optional()
 })
 
-const listSchedulesSchema = z.object({
+export const listSchedulesSchema = z.object({
+	cursor: z.string().min(1).optional(),
 	limit: z.coerce.number().int().min(1).max(100).default(20),
 	status: z.enum(['active', 'paused', 'completed', 'error']).optional(),
 	jobId: z.string().uuid().optional(),
@@ -99,7 +101,11 @@ export function createSchedulesRouter(db: PrismaClient): Router {
 	router.post('/:scheduleId/trigger', (req: Request<ScheduleParams>, res: Response, next: NextFunction) => {
 		const ctx = buildRequestContext(req, res)
 		const { workspaceId, scheduleId } = req.params
-		schedulesService.triggerManual(db, ctx, workspaceId, scheduleId)
+		const rawKey = req.header('Idempotency-Key')
+		if (rawKey !== undefined && (rawKey.length < 1 || rawKey.length > 128)) {
+			return void next(new ValidationError([{ code: 'custom', path: ['Idempotency-Key'], message: 'Idempotency-Key must be between 1 and 128 characters' }]))
+		}
+		schedulesService.triggerManual(db, ctx, workspaceId, scheduleId, rawKey)
 			.then(r => res.status(202).json(success(res, r))).catch(next)
 	})
 

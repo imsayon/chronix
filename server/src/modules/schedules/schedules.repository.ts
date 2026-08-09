@@ -3,6 +3,18 @@ import type { Schedule, ScheduleClaimCandidate, ListSchedulesQuery } from './sch
 import { encodeCursor, decodeCursor } from '../../common/pagination.js'
 import { ScheduleNameTakenError } from './schedules.errors.js'
 
+type DbClient = PrismaClient | Prisma.TransactionClient
+
+function mapSchedule(row: {
+	id: string; workspaceId: string; jobId: string; name: string; description: string | null;
+	scheduleType: ScheduleType; cronExpression: string | null; timezone: string; runAt: Date | null;
+	nextRunAt: Date | null; status: ScheduleStatus; misfirePolicy: MisfirePolicy; maxRetries: number;
+	retryBackoffBaseMs: number; lastClaimedAt: Date | null; lastClaimedBy: string | null;
+	leaseExpiresAt: Date | null; version: number; deletedAt: Date | null; createdAt: Date; updatedAt: Date;
+}): Schedule {
+	return { ...row, scheduleType: row.scheduleType as Schedule['scheduleType'], status: row.status as Schedule['status'], misfirePolicy: row.misfirePolicy as Schedule['misfirePolicy'] }
+}
+
 export async function findScheduleById(
 	db: PrismaClient,
 	id: string,
@@ -11,7 +23,7 @@ export async function findScheduleById(
 	const result = await db.schedule.findFirst({
 		where: { id, workspaceId, deletedAt: null },
 	})
-	return result as Schedule | null
+	return result ? mapSchedule(result) : null
 }
 
 export async function findSchedulesByWorkspace(
@@ -19,7 +31,7 @@ export async function findSchedulesByWorkspace(
 	workspaceId: string,
 	query: ListSchedulesQuery
 ): Promise<{ schedules: Schedule[]; nextCursor: string | null; hasMore: boolean }> {
-	const limit = query.limit ?? 20
+	const limit = Math.min(Math.max(query.limit ?? 20, 1), 100)
 	const where: Prisma.ScheduleWhereInput = {
 		workspaceId,
 		deletedAt: null,
@@ -41,7 +53,7 @@ export async function findSchedulesByWorkspace(
 	const lastItem = items.at(-1)
 	const nextCursor = hasMore && lastItem ? encodeCursor(lastItem.id) : null
 
-	return { schedules: items as unknown as Schedule[], nextCursor, hasMore }
+	return { schedules: items.map(mapSchedule), nextCursor, hasMore }
 }
 
 export async function insertSchedule(
@@ -79,7 +91,7 @@ export async function insertSchedule(
 				status: 'active' as ScheduleStatus,
 			},
 		})
-		return result as unknown as Schedule
+		return mapSchedule(result)
 	} catch (err: unknown) {
 		if ((err as { code?: string }).code === 'P2002') {
 			throw new ScheduleNameTakenError(data.name)
@@ -93,6 +105,7 @@ export async function updateSchedule(
 	id: string,
 	workspaceId: string,
 	data: Partial<{
+		version: number
 		name: string
 		description: string | null
 		cronExpression: string | null
@@ -107,7 +120,12 @@ export async function updateSchedule(
 	try {
 		// Use updateMany with both id and workspaceId to avoid needing compound unique
 		const result = await db.schedule.updateMany({
-			where: { id, workspaceId, deletedAt: null },
+			where: {
+				id,
+				workspaceId,
+				deletedAt: null,
+				...(data.version !== undefined ? { version: data.version } : {}),
+			},
 			data: {
 				...(data.name !== undefined ? { name: data.name } : {}),
 				...(data.description !== undefined ? { description: data.description } : {}),
@@ -118,6 +136,7 @@ export async function updateSchedule(
 				...(data.misfirePolicy !== undefined ? { misfirePolicy: data.misfirePolicy as MisfirePolicy } : {}),
 				...(data.maxRetries !== undefined ? { maxRetries: data.maxRetries } : {}),
 				...(data.retryBackoffBaseMs !== undefined ? { retryBackoffBaseMs: data.retryBackoffBaseMs } : {}),
+				version: { increment: 1 },
 			},
 		})
 		if (result.count === 0) return null
@@ -168,7 +187,7 @@ export async function softDeleteSchedule(
 }
 
 export async function findDueSchedules(
-	db: PrismaClient,
+	db: DbClient,
 	opts: { now: Date; batchSize: number }
 ): Promise<ScheduleClaimCandidate[]> {
 	const rows = await db.$queryRaw<
@@ -212,7 +231,7 @@ export async function findDueSchedules(
 }
 
 export async function conditionalClaimSchedule(
-	db: PrismaClient,
+	db: DbClient,
 	candidateId: string,
 	candidateVersion: number,
 	nextRunAt: Date | null,

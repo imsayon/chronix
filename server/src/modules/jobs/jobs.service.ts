@@ -1,7 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { RequestContext } from '../../common/auth.types.js'
 import { requireWorkspaceAccess, requireScope } from '../../common/auth.guards.js'
-import { NotFoundError } from '../../common/errors/http-errors.js'
+import { NotFoundError, VersionConflictError } from '../../common/errors/http-errors.js'
 import { writeAuditEvent } from '../../common/audit.js'
 import { advisorySsrfCheck } from '../../infra/http-client/ssrf-check.js'
 import * as repo from './jobs.repository.js'
@@ -44,6 +44,7 @@ export async function updateJob(db: PrismaClient, ctx: RequestContext, workspace
 	}
 	const job = await repo.updateJobProperly(db, jobId, workspaceId, input)
 	if (!job) {
+		if (input.version !== undefined) throw new VersionConflictError()
 		throw new NotFoundError(`Job ${jobId} not found.`)
 	}
 	await writeAuditEvent(db, ctx, workspaceId, 'job.updated', { jobId: job.id, updates: Object.keys(input) })

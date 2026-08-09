@@ -21,7 +21,7 @@
 
 * { box-sizing: border-box; }
 html { min-width: 320px; background: var(--canvas); }
-body { min-width: 320px; margin: 0; color: var(--ink); background: var(--canvas); font-family: var(--font-ibm-plex-sans), "Helvetica Neue", sans-serif; font-size: 15px; line-height: 1.45; }
+body { min-width: 320px; margin: 0; color: var(--ink); background: var(--canvas); font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif; font-size: 15px; line-height: 1.45; }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .58; }
@@ -104,7 +104,7 @@ h1 { font-size: clamp(25px, 2.6vw, 32px); line-height: 1.08; letter-spacing: -.0
 .schedule-name { display: block; width: fit-content; color: var(--ink); font-weight: 630; letter-spacing: -.012em; }
 .schedule-name:hover { color: var(--action); text-decoration: underline; text-underline-offset: 3px; }
 .target-path, .timezone { display: block; margin-top: 2px; color: var(--ink-muted); font-size: 12px; }
-code, .mono { color: #5b3423; font-family: var(--font-ibm-plex-mono), ui-monospace, monospace; font-size: 12px; }
+code, .mono { color: #5b3423; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 590; }
 .status--healthy { color: var(--success); }.status--attention { color: var(--warning); }.status--paused { color: var(--paused); }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; }
@@ -112,7 +112,7 @@ code, .mono { color: #5b3423; font-family: var(--font-ibm-plex-mono), ui-monospa
 .cron-summary .timezone { display: inline; margin: 0; }
 .detail-page { width: min(1080px, 100%); margin: 0 auto; }
 .detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
-.detail-heading h1 { overflow-wrap: anywhere; font-family: var(--font-ibm-plex-mono), monospace; font-size: clamp(18px, 3vw, 24px); letter-spacing: -.025em; }
+.detail-heading h1 { overflow-wrap: anywhere; font-family: "IBM Plex Mono", monospace; font-size: clamp(18px, 3vw, 24px); letter-spacing: -.025em; }
 .eyebrow { margin-bottom: 6px; color: var(--action); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .muted-copy { color: var(--ink-muted); font-size: 13px; }
 .fact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 24px 0 36px; }

@@ -47,6 +47,12 @@ export class InvalidTimezoneError extends AppError {
 		super('INVALID_TIMEZONE', `Invalid timezone: ${tz}`, 422)
 	}
 }
+export class InvalidCronError extends AppError {
+	public constructor() { super('INVALID_CRON', 'The cron expression is invalid.', 400) }
+}
+export class ScheduleInvariantError extends AppError {
+	public constructor(message = 'The schedule fields are inconsistent.') { super('SCHEDULE_INVARIANT', message, 400) }
+}
 
 export class OneTimeInPastError extends AppError {
 	constructor() {

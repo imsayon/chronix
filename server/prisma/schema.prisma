@@ -192,6 +192,7 @@ model Job {
     bodyTemplate String?    @map("body_template")
     timeoutMs    Int        @default(30000) @map("timeout_ms")
     isEnabled    Boolean    @default(true) @map("is_enabled")
+    version      Int        @default(0)
     deletedAt    DateTime?  @map("deleted_at") @db.Timestamptz
     createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
     updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz

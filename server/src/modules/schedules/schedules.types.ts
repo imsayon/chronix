@@ -51,6 +51,7 @@ export type CreateScheduleInput = {
 }
 
 export type UpdateScheduleInput = {
+	version?: number
 	name?: string
 	description?: string | null
 	cronExpression?: string | null

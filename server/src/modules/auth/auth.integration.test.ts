@@ -441,3 +441,13 @@ describe("API key routes", () => {
     expect(createRes.status).toBe(403);
   });
 });
+
+describe("OpenAPI contract", () => {
+  it("serves an OpenAPI 3.1 document generated from runtime schemas", async () => {
+    const res = await app.get("/api/v1/openapi.json");
+    expect(res.status).toBe(200);
+    expect(res.body.openapi).toBe("3.1.0");
+    expect(res.body.paths["/api/v1/workspaces/{workspaceId}/schedules/{scheduleId}/trigger"]).toBeDefined();
+    expect(res.body.components.securitySchemes.bearerAuth.scheme).toBe("bearer");
+  });
+});

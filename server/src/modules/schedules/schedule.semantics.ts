@@ -110,6 +110,11 @@ export function deriveIdempotencyKey(scheduleId: string, nominalRunAt: Date): st
   return hash.slice(0, 64);
 }
 
+export function deriveManualIdempotencyKey(scheduleId: string, clientKey?: string): string {
+  if (!clientKey) return deriveIdempotencyKey(scheduleId, new Date());
+  return sha256Hex(`${scheduleId}:manual:${clientKey}`).slice(0, 64);
+}
+
 export function computeBackoff(attemptCount: number, baseMs: number): number {
   if (attemptCount <= 0) return 0;
   // min(baseMs * 2^(attemptCount-1), 24 * 60 * 60 * 1000)
