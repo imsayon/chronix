@@ -53,6 +53,7 @@ function hostnameFor(url: URL): string {
 }
 
 async function resolveSafeAddress(url: URL, resolver: Resolver): Promise<ResolvedAddress> {
+	validateTargetUrl(url)
 	const hostname = hostnameFor(url)
 	const literalFamily = net.isIP(hostname)
 	if (literalFamily === 4 || literalFamily === 6) {
@@ -82,8 +83,7 @@ function validateInput(input: DeliveryRequest): void {
 	} catch {
 		throw new SsrfBlockedError('URL is invalid.')
 	}
-	if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new SsrfBlockedError('Protocol not allowed; use HTTP or HTTPS.')
-	if (url.username || url.password) throw new SsrfBlockedError('Embedded credentials are not allowed.')
+	validateTargetUrl(url)
 	if (!ALLOWED_METHODS.has(input.method.toUpperCase())) throw new Error(`HTTP method ${input.method} is not allowed.`)
 	if (!Number.isInteger(input.timeoutMs) || input.timeoutMs < 1_000 || input.timeoutMs > 300_000) throw new Error('Timeout must be between 1000 and 300000 milliseconds.')
 	if (input.body !== null && Buffer.byteLength(input.body, 'utf8') > MAX_BODY_BYTES) throw new Error('Request body exceeds the allowed size.')
@@ -97,6 +97,12 @@ function validateInput(input: DeliveryRequest): void {
 		totalBytes += Buffer.byteLength(name) + Buffer.byteLength(value)
 	}
 	if (totalBytes > MAX_HEADER_BYTES) throw new Error('Request headers exceed the allowed size.')
+}
+
+function validateTargetUrl(url: URL): void {
+	if (url.href.length > MAX_URL_LENGTH) throw new SsrfBlockedError('URL exceeds the allowed length.')
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new SsrfBlockedError('Protocol not allowed; use HTTP or HTTPS.')
+	if (url.username || url.password) throw new SsrfBlockedError('Embedded credentials are not allowed.')
 }
 
 function pinnedAgent(url: URL, address: ResolvedAddress): Agent {
