@@ -45,4 +45,5 @@ services:
   - type: keyvalue
     name: chronix-valkey
     plan: free
+    maxmemoryPolicy: noeviction
     ipAllowList: []
