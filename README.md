@@ -106,16 +106,16 @@ Integration tests provision isolated PostgreSQL 18 and Valkey containers. They d
 
 ## Deployment
 
-The root `render.yaml` defines the client, API, scheduler, executor, managed PostgreSQL connection, and Valkey topology. Prisma migrations run exactly once as the API pre-deploy command; application processes never migrate on startup. Configure all `sync: false` values in the Render dashboard and deploy from a green `main` branch.
+The root `render.yaml` defines a free Render demo topology: the client, API, and Valkey. Configure all `sync: false` values in the Render dashboard and deploy from a green `main` branch. The API uses the external Prisma Postgres database and applies pending migrations before it starts.
 
-This topology uses paid Render starter services. It is intentionally not auto-provisioned from this repository without billing approval. Operational health, recovery, and rollback procedures are in [the runbook](ops/runbooks/README.md).
+Render does not provide free background-worker instances, so this profile explicitly runs the scheduler and executor inside the API process with `EMBEDDED_WORKERS=true`. Local and paid deployments retain the independent `app.ts` and `worker.ts` processes. This compromise is suitable for a low-traffic portfolio demo, but scheduled delivery pauses whenever Render spins down the free API service. Operational health, recovery, and rollback procedures are in [the runbook](ops/runbooks/README.md).
 
 ## Trade-offs and limits
 
 - At-least-once delivery favors durability over impossible exactly-once network semantics; webhook consumers must be idempotent.
 - PostgreSQL is intentional: transactional state transitions, constraints, row locking, and append-only migrations are central to the scheduler's correctness.
 - Chronix is webhook-only. It does not execute arbitrary code, build DAGs, or provide multi-region consensus.
-- The current deployment blueprint is a single-region staging topology, not a claim of global high availability.
+- The free deployment blueprint is a single-process, single-region demo topology, not a claim of continuous availability.
 
 ## License
 

@@ -25,6 +25,7 @@ export const configSchema = z
     RETENTION_PRUNE_INTERVAL_MS: z.coerce.number().int().min(60000).default(86400000),
     RETENTION_PRUNE_BATCH_SIZE: z.coerce.number().int().min(100).max(10000).default(1000),
     WORKER_ROLE: z.enum(["scheduler", "executor"]).default("executor"),
+    EMBEDDED_WORKERS: z.stringbool().default(false),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   })
   .refine((value) => value.DB_POOL_MIN <= value.DB_POOL_MAX, {

@@ -1,8 +1,11 @@
 import { createServer } from "node:http"
 import { loadConfig } from "./common/config/index.js"
+import { SystemClock } from "./infra/clock.js"
+import { startExecutor } from "./infra/background/executor.js"
+import { startScheduler, type Stoppable } from "./infra/background/scheduler.js"
 import { createDatabaseClient } from "./infra/database/client.js"
 import { createHttpServer } from "./infra/http/server.js"
-import { createRedisConnection } from "./infra/queue/client.js"
+import { createExecutionQueue, createRedisConnection } from "./infra/queue/client.js"
 import { initOpenTelemetry, logger, shutdownOpenTelemetry } from "./infra/telemetry.js"
 
 async function main(): Promise<void> {
@@ -10,6 +13,15 @@ async function main(): Promise<void> {
 	await initOpenTelemetry(config.OTEL_EXPORTER_OTLP_ENDPOINT)
 	const database = createDatabaseClient(config)
 	const redis = createRedisConnection(config)
+	const backgroundRoles: Stoppable[] = []
+	const queue = config.EMBEDDED_WORKERS ? createExecutionQueue(config) : undefined
+	if (queue !== undefined) {
+		backgroundRoles.push(
+			startScheduler(config, new SystemClock(), database, queue),
+			startExecutor(config, database),
+		)
+		logger.info("Chronix demo-mode background roles started in the API process.")
+	}
 	const server = createServer(createHttpServer(database, redis, config))
 	server.headersTimeout = 15_000
 	server.requestTimeout = 30_000
@@ -27,6 +39,8 @@ async function main(): Promise<void> {
 				exception === undefined ? resolve() : reject(exception),
 			),
 		)
+		await Promise.all(backgroundRoles.map((role) => role.stop()))
+		await queue?.close()
 		await Promise.all([database.$disconnect(), redis.quit()])
 		await shutdownOpenTelemetry()
 		logger.info("Chronix API shut down gracefully.")

@@ -77,6 +77,7 @@ export function createTestConfig(
     RETENTION_PRUNE_INTERVAL_MS: 86_400_000,
     RETENTION_PRUNE_BATCH_SIZE: 1_000,
     WORKER_ROLE: "executor",
+    EMBEDDED_WORKERS: false,
     ...overrides,
   };
 }
