@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { loadConfig } from "./index.js";
 import { configSchema } from "./schema.js";
 
 const validEnvironment = {
@@ -27,5 +28,13 @@ describe("configSchema", () => {
 
   it("rejects an invalid pool range", () => {
     expect(configSchema.safeParse({ ...validEnvironment, DB_POOL_MIN: "11", DB_POOL_MAX: "10" }).success).toBe(false);
+  });
+
+  it("rejects encryption keys that do not decode to 32 bytes", () => {
+    expect(configSchema.safeParse({ ...validEnvironment, APP_ENCRYPTION_KEY: "a".repeat(64) }).success).toBe(false);
+  });
+
+  it("uses the hosting provider port when API_PORT is not set", () => {
+    expect(loadConfig({ ...validEnvironment, PORT: "10000" })).toMatchObject({ API_PORT: 10000 });
   });
 });

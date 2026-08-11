@@ -119,6 +119,7 @@ model RefreshToken {
     @@index([accountId])
     @@index([familyId])
     @@index([workspaceId])
+    @@index([expiresAt], map: "idx_refresh_tokens_expiry")
     @@map("refresh_tokens")
 }
 
@@ -285,6 +286,7 @@ model Execution {
     @@index([createdAt], where: raw("status = 'pending'"), map: "idx_executions_pending")
     @@index([nextRetryAt], where: raw("status = 'failed' AND next_retry_at IS NOT NULL"), map: "idx_executions_retry")
     @@index([leaseExpiresAt], where: raw("status IN ('claimed', 'running')"), map: "idx_executions_lease_recovery")
+    @@index([workspaceId, terminalAt], where: raw("terminal_at IS NOT NULL"), map: "idx_executions_retention")
     @@map("executions")
 }
 
