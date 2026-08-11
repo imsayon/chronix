@@ -4,7 +4,7 @@
 
 Deploy from `main` only after the server and client CI checks are green. The Render Blueprint runs Prisma migrations once through the API service `preDeployCommand`; scheduler and executor processes never migrate on startup.
 
-Required dashboard secrets are `APP_ENCRYPTION_KEY` (32-byte key), `API_KEY_HMAC_SECRET`, ES256 `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY`, `CORS_ORIGIN`, and `NEXT_PUBLIC_API_URL`. Generate and store them in the provider dashboard; never commit them.
+Required dashboard values are `DATABASE_URL`, `APP_ENCRYPTION_KEY` (32-byte key), `API_KEY_HMAC_SECRET`, ES256 `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY`, `CORS_ORIGIN`, and `NEXT_PUBLIC_API_URL`. Generate or copy them through the provider dashboard; never commit them. The Blueprint references the API's server-side values from the scheduler and executor so they cannot drift between processes.
 
 ## Health and rollback
 
@@ -24,4 +24,4 @@ Required dashboard secrets are `APP_ENCRYPTION_KEY` (32-byte key), `API_KEY_HMAC
 
 Delivery is durable at-least-once: schedule advancement, execution creation, and outbox insertion commit together; BullMQ publication is retry-safe and execution claims are fenced by lease generations. Consumers must deduplicate on `X-Chronix-Execution-Id` and `X-Chronix-Attempt-Number`.
 
-Hosted deployment, Grafana credentials, log routing, and paid resource approval remain `BLOCKED_EXTERNAL` until explicitly supplied.
+The Blueprint uses paid Render starter services for the API, client, scheduler, executor, and Valkey. Hosted deployment, Grafana credentials, log routing, and billing approval remain external prerequisites until explicitly supplied.

@@ -34,8 +34,9 @@ services:
     build:
       context: ../server
       target: migration
-    env_file: ${CHRONIX_ENV_FILE:-../server/.env}
+    env_file: ${CHRONIX_ENV_FILE:-../server/.env.local}
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://chronix:chronix_dev@postgres:5432/chronix_dev
     depends_on:
       postgres:
@@ -46,8 +47,9 @@ services:
     build:
       context: ../server
       target: runtime
-    env_file: ${CHRONIX_ENV_FILE:-../server/.env}
+    env_file: ${CHRONIX_ENV_FILE:-../server/.env.local}
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://chronix:chronix_dev@postgres:5432/chronix_dev
       REDIS_URL: redis://valkey:6379
       CORS_ORIGIN: http://localhost:3001
@@ -70,8 +72,9 @@ services:
     build:
       context: ../server
       target: runtime
-    env_file: ${CHRONIX_ENV_FILE:-../server/.env}
+    env_file: ${CHRONIX_ENV_FILE:-../server/.env.local}
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://chronix:chronix_dev@postgres:5432/chronix_dev
       REDIS_URL: redis://valkey:6379
       WORKER_ROLE: scheduler
@@ -87,8 +90,9 @@ services:
     build:
       context: ../server
       target: runtime
-    env_file: ${CHRONIX_ENV_FILE:-../server/.env}
+    env_file: ${CHRONIX_ENV_FILE:-../server/.env.local}
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://chronix:chronix_dev@postgres:5432/chronix_dev
       REDIS_URL: redis://valkey:6379
       WORKER_ROLE: executor

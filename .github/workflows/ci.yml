@@ -126,5 +126,5 @@ jobs:
 
       - name: Validate Compose configuration
         run: |
-          cp server/.env.example server/.env
+          cp server/.env.example server/.env.local
           docker compose --file ops/docker-compose.yml config --quiet

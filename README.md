@@ -1,59 +1,81 @@
 # Chronix
 
-Chronix is a self-hostable distributed scheduler for durable outbound HTTP webhooks. PostgreSQL owns schedule and execution state, a transactional outbox bridges committed work to BullMQ on Valkey, and fenced database leases prevent stale workers from overwriting newer outcomes.
+Chronix is a multi-tenant control plane for scheduling and delivering outbound HTTP webhooks. It is deliberately more than a cron-expression wrapper: PostgreSQL owns durable state, a transactional outbox bridges committed work to BullMQ on Valkey, and fenced database leases prevent stale workers from overwriting newer outcomes.
 
-> Current release state: Phases 0–4 are implemented, tested, and merged. Hosted deployment and staging acceptance require provider credentials and are intentionally tracked outside the repository.
+The repository contains an Express API, independently scalable scheduler and executor processes, and a Next.js operations dashboard.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  UI["Next.js dashboard"] --> API["Express API"]
-  API --> PG[("PostgreSQL 18")]
-  Scheduler["Scheduler role"] --> PG
-  Scheduler --> Outbox["Transactional outbox"]
-  Outbox --> Queue["BullMQ on Valkey"]
-  Queue --> Executor["Executor role"]
-  Executor --> Target["HTTP webhook target"]
-  Executor --> PG
+    UI[Next.js dashboard] --> API[Express API]
+    API --> PG[(PostgreSQL)]
+    S[Scheduler] --> PG
+    S --> Q[(Valkey / BullMQ)]
+    Q --> E[Executor]
+    E --> PG
+    E --> WH[Webhook targets]
+    API --> Q
 ```
 
-The server has two bootstraps only: `src/app.ts` for the API and `src/worker.ts` for either the scheduler or executor role. Shared business rules live below those adapters. Database migrations run as a deployment step, never during application startup.
+- Schedule advancement, execution creation, and outbox insertion commit atomically.
+- Scheduler claims use `FOR UPDATE SKIP LOCKED`; unique constraints make retries safe.
+- Execution claims use expiring leases and fencing generations for stale-worker recovery.
+- Delivery is at-least-once. Receivers can deduplicate using stable execution and attempt headers.
+- Every repository query is workspace-scoped; generated Prisma models remain behind domain/DTO mappings.
+- Webhook delivery validates and pins resolved addresses, revalidates redirects, blocks private networks, and bounds response capture.
+- Job secrets are encrypted with versioned AES-256-GCM and sensitive headers are redacted.
 
-## Guarantees and boundaries
+## Product surface
 
-- Webhook delivery only; Chronix never executes user-supplied code.
-- PostgreSQL is authoritative. Valkey is transport and rate-limit infrastructure, not a source of truth.
-- Delivery is durable at-least-once. Receivers must honor the stable idempotency key for effectively exactly-once effects.
-- Schedule claiming and execution ownership use database concurrency controls and fencing generations.
-- Every tenant resource is scoped to a workspace.
-- Job headers, bodies, and signing secrets use versioned AES-256-GCM encryption; signing secrets are disclosed only at creation or rotation.
-- Execution history is bounded by workspace retention settings and can be exported as a bounded CSV stream.
-- The MVP excludes DAGs, arbitrary code execution, multi-region consensus, Kubernetes, and MFA.
+Chronix provides workspace-aware authentication and API keys, job and schedule lifecycle management, cron/timezone/DST policies, manual idempotent triggers, retries and dead-letter outcomes, execution timelines, worker heartbeats, audit events, OpenAPI 3.1, Prometheus metrics, OpenTelemetry hooks, retention, and streaming execution export.
 
-## Local setup
+The API lives under `/api/v1`. JSON responses use either `{ data, meta: { requestId } }` or `{ error, meta: { requestId } }`; list endpoints are bounded and cursor-paginated. The generated OpenAPI document is served at `/api/v1/openapi.json`.
+
+## Run locally
 
 Prerequisites: Node.js `24.19.0`, pnpm `11.21.0`, Docker with Compose, and OpenSSL.
 
 ```bash
-cp server/.env.example server/.env
-cp client/.env.example client/.env.local
-```
+nvm use
+corepack enable
+corepack prepare pnpm@11.21.0 --activate
 
-Replace the JWT, HMAC, and 32-byte `APP_ENCRYPTION_KEY` placeholders in `server/.env`. Use an ES256 P-256 key pair and encode PEM line breaks as `\n` inside the env file. Then start the complete topology:
+cd server
+pnpm install --frozen-lockfile
+pnpm setup:local
 
-```bash
+cd ../client
+pnpm install --frozen-lockfile
+cp .env.example .env.local
+
+cd ..
 docker compose --file ops/docker-compose.yml up --build
 ```
 
-The one-shot `migrate` service applies migrations before the API, scheduler, and executor start. The dashboard is available at `http://localhost:3001`; API liveness and readiness are at `http://localhost:3000/health/live` and `/health/ready`.
+`pnpm setup:local` creates `server/.env.local` with local-only cryptographic material. The one-shot Compose migration service deploys the Prisma migrations before the API, scheduler, and executor start.
 
-For package-level development:
+- Dashboard: `http://localhost:3001`
+- API readiness: `http://localhost:3000/health/ready`
+- API liveness: `http://localhost:3000/health/live`
+- Metrics: `http://localhost:3000/metrics`
+
+For faster package-level development, start PostgreSQL and Valkey once, deploy migrations, then run each process in its own terminal:
 
 ```bash
-cd server && pnpm install --frozen-lockfile && pnpm prisma:generate && pnpm dev
-cd client && pnpm install --frozen-lockfile && pnpm dev
+docker compose --file ops/docker-compose.yml up -d postgres valkey
+
+cd server
+pnpm migrate:deploy
+pnpm dev                 # API
+pnpm dev:scheduler       # scheduler
+pnpm dev:worker          # executor
+
+cd client
+pnpm dev                 # dashboard
 ```
+
+The server loads `.env.local` before `.env`, so local development remains isolated from an optional hosted Prisma Postgres connection in `.env`. Neither file is committed.
 
 ## Verification
 
@@ -74,19 +96,27 @@ pnpm typecheck
 pnpm lint
 pnpm build
 pnpm audit --audit-level=high
+
+cd ..
+docker compose --file ops/docker-compose.yml config --quiet
+git diff --check
 ```
 
-Integration tests provision isolated PostgreSQL 18 and Valkey containers; they never reuse a developer database or silently fall back when Valkey is unavailable.
+Integration tests provision isolated PostgreSQL 18 and Valkey containers. They do not reuse a developer database or silently fall back when Valkey is unavailable.
 
-## Documentation
+## Deployment
 
-- [Architecture](docs/ARCHITECTURE.MD)
-- [API conventions](docs/API.MD)
-- [Architecture decisions](docs/DECISIONS.md)
-- [Contributing](docs/CONTRIBUTING.MD)
-- [Operations runbook](ops/runbooks/README.md)
-- [Render Blueprint](render.yaml)
+The root `render.yaml` defines the client, API, scheduler, executor, managed PostgreSQL connection, and Valkey topology. Prisma migrations run exactly once as the API pre-deploy command; application processes never migrate on startup. Configure all `sync: false` values in the Render dashboard and deploy from a green `main` branch.
+
+This topology uses paid Render starter services. It is intentionally not auto-provisioned from this repository without billing approval. Operational health, recovery, and rollback procedures are in [the runbook](ops/runbooks/README.md).
+
+## Trade-offs and limits
+
+- At-least-once delivery favors durability over impossible exactly-once network semantics; webhook consumers must be idempotent.
+- PostgreSQL is intentional: transactional state transitions, constraints, row locking, and append-only migrations are central to the scheduler's correctness.
+- Chronix is webhook-only. It does not execute arbitrary code, build DAGs, or provide multi-region consensus.
+- The current deployment blueprint is a single-region staging topology, not a claim of global high availability.
 
 ## License
 
-Chronix is available under the [MIT License](LICENSE).
+[MIT](LICENSE)

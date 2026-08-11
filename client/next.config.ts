@@ -26,7 +26,7 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: 'standalone',
+  ...(process.env.RENDER === 'true' ? {} : { output: 'standalone' as const }),
   async headers() {
     return [{
       source: '/:path*',
