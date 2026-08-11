@@ -17,7 +17,7 @@ describe("configSchema", () => {
   it("applies safe defaults", () => {
     const result = configSchema.safeParse(validEnvironment);
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toMatchObject({ API_PORT: 3000, DB_POOL_MIN: 2, DB_POOL_MAX: 10, WORKER_ROLE: "executor" });
+    if (result.success) expect(result.data).toMatchObject({ API_PORT: 3000, DB_POOL_MIN: 2, DB_POOL_MAX: 10, WORKER_ROLE: "executor", EMBEDDED_WORKERS: false });
   });
 
   it("rejects a missing database URL", () => {
@@ -36,5 +36,9 @@ describe("configSchema", () => {
 
   it("uses the hosting provider port when API_PORT is not set", () => {
     expect(loadConfig({ ...validEnvironment, PORT: "10000" })).toMatchObject({ API_PORT: 10000 });
+  });
+
+  it("enables the single-process demo topology explicitly", () => {
+    expect(loadConfig({ ...validEnvironment, EMBEDDED_WORKERS: "true" })).toMatchObject({ EMBEDDED_WORKERS: true });
   });
 });
