@@ -7,6 +7,11 @@ services:
     buildCommand: corepack pnpm@11.21.0 install --prod=false --frozen-lockfile && corepack pnpm@11.21.0 build
     startCommand: corepack pnpm@11.21.0 migrate:deploy && node dist/app.js
     healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 300
+    buildFilter:
+      paths:
+        - server/**
+        - render.yaml
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -38,6 +43,10 @@ services:
     buildCommand: corepack pnpm@11.21.0 install --prod=false --frozen-lockfile && corepack pnpm@11.21.0 build
     startCommand: corepack pnpm@11.21.0 start
     healthCheckPath: /login
+    buildFilter:
+      paths:
+        - client/**
+        - render.yaml
     envVars:
       - key: NEXT_PUBLIC_API_URL
         sync: false

@@ -185,17 +185,24 @@ export async function scheduleRetry(
 	nextRetryAt: Date
 ): Promise<boolean> {
 	const rows = await db.$queryRaw<Array<{ id: string }>>`
-		UPDATE executions
-		SET status = 'pending',
-		    next_retry_at = ${nextRetryAt},
-		    attempt_count = attempt_count + 1,
-		    lease_holder_id = NULL,
-		    lease_expires_at = NULL,
-		    lease_generation = lease_generation + 1,
-		    version = version + 1
-		WHERE id = ${executionId}::uuid
-		  AND lease_generation = ${leaseGeneration}
-		RETURNING id
+		WITH updated AS (
+			UPDATE executions
+			SET status = 'pending',
+			    next_retry_at = ${nextRetryAt},
+			    attempt_count = attempt_count + 1,
+			    lease_holder_id = NULL,
+			    lease_expires_at = NULL,
+			    lease_generation = lease_generation + 1,
+			    version = version + 1
+			WHERE id = ${executionId}::uuid
+			  AND lease_generation = ${leaseGeneration}
+			RETURNING id
+		), reset_outbox AS (
+			UPDATE execution_outbox
+			SET published_at = NULL
+			WHERE execution_id IN (SELECT id FROM updated)
+		)
+		SELECT id FROM updated
 	`
 	return rows.length > 0
 }
@@ -257,16 +264,23 @@ export async function recoverStaleLease(
 	executionId: string
 ): Promise<boolean> {
 	const rows = await db.$queryRaw<Array<{ id: string }>>`
-		UPDATE executions
-		SET status = 'pending',
-		    lease_holder_id = NULL,
-		    lease_expires_at = NULL,
-		    next_retry_at = NULL,
-		    lease_generation = lease_generation + 1,
-		    version = version + 1
-		WHERE id = ${executionId}::uuid
-		  AND status IN ('claimed', 'running')
-		RETURNING id
+		WITH updated AS (
+			UPDATE executions
+			SET status = 'pending',
+			    lease_holder_id = NULL,
+			    lease_expires_at = NULL,
+			    next_retry_at = NULL,
+			    lease_generation = lease_generation + 1,
+			    version = version + 1
+			WHERE id = ${executionId}::uuid
+			  AND status IN ('claimed', 'running')
+			RETURNING id
+		), reset_outbox AS (
+			UPDATE execution_outbox
+			SET published_at = NULL
+			WHERE execution_id IN (SELECT id FROM updated)
+		)
+		SELECT id FROM updated
 	`
 	return rows.length > 0
 }

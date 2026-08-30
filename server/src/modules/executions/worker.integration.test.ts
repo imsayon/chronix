@@ -56,7 +56,7 @@ async function createExecution(input: {
     maxRetries: input.maxRetries,
     retryBackoffBaseMs: 1_000,
   });
-  return database.execution.create({
+  const execution = await database.execution.create({
     data: {
       workspaceId,
       scheduleId: schedule.id,
@@ -70,6 +70,10 @@ async function createExecution(input: {
       retryBackoffBaseMs: 1_000,
     },
   });
+  await database.executionOutbox.create({
+    data: { executionId: execution.id, payload: { executionId: execution.id } },
+  });
+  return execution;
 }
 
 describe("worker service integration", () => {
@@ -151,10 +155,13 @@ describe("worker service integration", () => {
     expect(await recordOutcome(database, execution.id, claimed!.leaseGeneration - 1, "succeeded")).toBe(false);
 
     await database.execution.update({ where: { id: execution.id }, data: { leaseExpiresAt: new Date(Date.now() - 1_000) } });
+    await database.executionOutbox.update({ where: { executionId: execution.id }, data: { publishedAt: new Date() } });
     expect(await recoverStaleLease(database, execution.id)).toBe(true);
     const recovered = await database.execution.findUniqueOrThrow({ where: { id: execution.id } });
+    const outbox = await database.executionOutbox.findUniqueOrThrow({ where: { executionId: execution.id } });
     expect(recovered.status).toBe("pending");
     expect(recovered.leaseGeneration).toBe(claimed!.leaseGeneration + 1);
+    expect(outbox.publishedAt).toBeNull();
     expect(await claimExecution(database, execution.id, "worker-b", 60_000)).not.toBeNull();
   });
 
