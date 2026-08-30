@@ -7,7 +7,6 @@ services:
     buildCommand: corepack pnpm@11.21.0 install --prod=false --frozen-lockfile && corepack pnpm@11.21.0 build
     startCommand: corepack pnpm@11.21.0 migrate:deploy && node dist/app.js
     healthCheckPath: /health/ready
-    maxShutdownDelaySeconds: 300
     buildFilter:
       paths:
         - server/**
