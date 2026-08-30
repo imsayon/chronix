@@ -24,10 +24,7 @@ services:
       - key: JWT_PUBLIC_KEY
         sync: false
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: chronix-valkey
-          property: connectionString
+        sync: false
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
@@ -50,9 +47,3 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         sync: false
-
-  - type: keyvalue
-    name: chronix-valkey
-    plan: free
-    maxmemoryPolicy: noeviction
-    ipAllowList: []
